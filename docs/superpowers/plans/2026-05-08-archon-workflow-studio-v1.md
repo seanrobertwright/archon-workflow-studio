@@ -18,7 +18,7 @@
 
 This plan covers v1 of one cohesive product, not multiple independent subsystems. The chunks below ARE the phase boundaries; each phase produces a working, testable increment but only Phase 9 onward delivers a shippable end-to-end studio. We do not split into separate plans because earlier phases have no standalone user value (e.g., a registry without a UI is not a thing anyone runs).
 
-The plan is structured as **chunks of ≤1000 lines each, reviewed independently per the writing-plans skill**. Phase 0 is large enough to span two chunks (1 + 2); Phases 1–10 are each one chunk (Chunks 3–12). **This file currently contains Chunks 1 and 2 (the entirety of Phase 0) in full detail.** Subsequent chunks will be appended after each is reviewed; until then, the phase outline below is the binding contract for what those chunks will cover.
+The plan is structured as **chunks of ≤1000 lines each, reviewed independently per the writing-plans skill**. Phase 0 is large enough to span two chunks (1 + 2); Phases 1–10 are each one chunk (Chunks 3–12). **This file currently contains Chunks 1, 2, and 3 (Phase 0 + Phase 1) in full detail.** Subsequent chunks will be appended after each is reviewed; until then, the phase outline below is the binding contract for what those chunks will cover.
 
 ---
 
@@ -134,7 +134,7 @@ Files listed by responsibility. Day-0 files are created in Phase 0; everything e
 
 **Phase 0 — Scaffold (Chunk 1, this file).** Bun workspaces root, four packages/apps, tooling, schema mirror at pinned SHA, schema-drift CI, killer round-trip harness with one fixture, Archon-endpoint probes, README updated. Outcome: `bun install && bun run build && bun test` green; CI workflows pass; round-trip test passes on one bundled default.
 
-**Phase 1 — Core data model + registry (Chunk 2).** Variant registry shape + 7 variant placeholder modules, `detectVariant`, `pickBaseFields`, the `_unknown` round-trip, Zustand store + actions, importer (`fromWorkflowDefinition`), exporter (`toWorkflowDefinition`). Vendor every Archon bundled default into `round-trip-fixtures/`. Outcome: round-trip test passes for ALL bundled defaults + the all-nodes smoke fixture, with `_unknown` capturing the residue.
+**Phase 1 — Core data model + registry (Chunk 3, this file).** Variant registry shape + 7 variant placeholder modules, `detectVariant`, `pickBaseFields`, the `_unknown` round-trip, Zustand store + actions, importer (`fromWorkflowDefinition`), exporter (`toWorkflowDefinition`). Vendor every Archon bundled default into `round-trip-fixtures/`. Outcome: round-trip test passes for ALL bundled defaults + the all-nodes smoke fixture, with `_unknown` capturing the residue.
 
 **Phase 2 — Canvas + theme + standalone shell skeleton (Chunk 3).** ThemeProvider with all four presets, `WorkflowBuilder` shell layout, `Canvas` with React Flow + dagre auto-layout (matching Archon's settings), `DagNodeComponent` with single top/bottom handles + variant color stripe + dashed `when:` edges, position persistence to localStorage, basic add/delete/connect/disconnect actions, the standalone `apps/standalone` shell wired to a stubbed `ArchonApiClient` returning a fixture so you can see the editor running locally. Outcome: open standalone, see a fixture workflow rendered, drag nodes around, watch positions persist on reload.
 
@@ -1922,4 +1922,1485 @@ If using the agent-execution path, mark all Phase 0 tasks complete and surface r
 - [ ] README quickstart (Task 14)
 - [ ] All local + remote CI green; `phase-0` tag pushed (Task 15)
 
-**Phase 1 begins** with the registry contract (`VariantDefinition<TData>`), the seven variant `fromDag`/`toDag` pure functions, importer + exporter, and broadening the round-trip test to all bundled defaults + the all-nodes smoke fixture. Chunk 2 will detail it.
+**Phase 1 begins** with the registry contract, the seven variant `fromDag`/`toDag` pure functions, importer + exporter, and broadening the round-trip test to all bundled defaults + the all-nodes smoke fixture. Chunk 3 (below) details it in full.
+
+---
+
+---
+
+## Chunk 3: Phase 1 — Core data model, registry, importer/exporter, full round-trip
+
+**Goal of this chunk:** Land the data layer: the `VariantDefinition` contract, per-variant pure data modules for all 7 variants (data shape + capabilities + library metadata + `fromDag` + `toDag`), the `_unknown` capture machinery, the Zustand store with workflow-JSON-as-truth and cascading rename, and the pure `fromWorkflowDefinition` / `toWorkflowDefinition` functions. The killer round-trip test is upgraded from schema-parse-only (Phase 0) to full importer→exporter→deep-equal across **every** Archon bundled default + the all-nodes smoke fixture. After Phase 1, no UI yet, but the entire data spine is verified end-to-end against real Archon workflows.
+
+**Definition of done for Phase 1:**
+
+- All YAML files in Archon's `.archon/workflows/defaults/` (at the pinned SHA) plus `test-workflows/e2e-pi-all-nodes-smoke.yaml` are vendored under `packages/studio-fixtures/src/round-trip-fixtures/`. `ROUND_TRIP_FIXTURE_NAMES` lists them all.
+- `packages/studio-core/src/nodes/shared/{detectVariant,pickBaseFields}.ts` exist as pure functions with full unit-test coverage.
+- `packages/studio-core/src/nodes/registry.ts` exports the typed `VariantDefinition<TData>` contract, a `VariantRegistry` that maps `VariantId → VariantDefinition`, and a default registry pre-populated with all 7 variants.
+- Each of `packages/studio-core/src/nodes/{command,prompt,bash,script,loop,approval,cancel}/` has `data.ts`, `fromDag.ts`, `toDag.ts`, `index.ts` (composing the `VariantDefinition`), and per-variant unit tests. Renderer/Inspector remain absent (Phases 3/4).
+- `packages/studio-core/src/exporter/{fromWorkflowDefinition,toWorkflowDefinition}.ts` exist as pure functions; both are unit-tested.
+- `packages/studio-core/src/store/builder-store.ts` is a real Zustand store: `loadWorkflow`, `clearWorkflow`, workflow-base setters, `addNode`, `updateNode`, `deleteNodes`, `connect`, `disconnect`, `renameNode`. The cascade covers `depends_on` + `when:` strings; **`$nodeId.output` body-reference cascade is deferred to Phase 4** alongside the inspector autocomplete (no Phase 1 UI calls `renameNode`, so the gap is dead-code-only). Position/canvas state is intentionally absent — Phase 2 adds it.
+- The killer round-trip test (`tests/round-trip.spec.ts`) does **parse → import → export → re-parse → deep-equal** for every fixture and is green.
+- `bun --filter='*' run build`, `bun --filter='*' run test`, and `bun run check-schema-drift` are all green locally and on CI.
+- `phase-1` annotated tag is pushed.
+
+**Reference skills if you get stuck:** `@lril-superpowers:test-driven-development`, `@lril-superpowers:verification-before-completion`, `@lril-superpowers:systematic-debugging`.
+
+**Big-picture data flow (the spine this chunk delivers):**
+
+```
+YAML on disk ──parse──▶ raw JSON ──┐
+                                   ├─ workflowDefinitionSchema.safeParse → validates
+                                   │                                       (server is
+                                   │                                        canonical;
+                                   │                                        client uses
+                                   │                                        for guard)
+                                   │
+                                   └─ fromWorkflowDefinition(raw) ────────▶ store {workflow, nodes, edges}
+                                                                                       │
+                                            ┌──────────── per-node ─────────────┐      │
+                                            │ detectVariant(rawNode) → VariantId│      │
+                                            │ pickBaseFields(rawNode, variantId)│      │
+                                            │   ↓ {base, variantSpecific,       │      │
+                                            │      unknown}                     │      │
+                                            │ variant.fromDag(...) → TData      │      │
+                                            └───────────────────────────────────┘      │
+                                                                                       ▼
+                                                                              user edits via store actions
+                                                                                       │
+                                                                                       ▼
+                                                          toWorkflowDefinition(store) → raw JSON
+                                                                                       │
+                                                                       workflowDefinitionSchema.parse(reExported)
+                                                                                       │
+                                                                                       ▼
+                                                                              re-emit YAML (Phase 7)
+```
+
+**The `_unknown` rule:** at every level (workflow base + node base + per-variant), keys our schema doesn't recognise are captured into a `_unknown` bag and spread back on export. This is the forward-compat guarantee. The killer round-trip test fails immediately if any byte of the source is silently dropped.
+
+---
+
+### Task 16: Vendor every Archon bundled default + smoke fixture
+
+**Files:**
+- Modify: `scripts/round-trip-fixtures.ts` (extend `FIXTURE_LIST`)
+- Modify: `packages/studio-fixtures/src/index.ts` (extend `ROUND_TRIP_FIXTURE_NAMES`)
+- Add: `packages/studio-fixtures/src/round-trip-fixtures/*.yaml` (the new vendored files)
+
+- [ ] **Step 1: Discover the canonical fixture list at the pinned SHA**
+
+Run:
+```bash
+SHA=$(cat .archon-source-pin)
+gh api repos/coleam00/Archon/contents/.archon/workflows/defaults?ref=$SHA --jq '.[].name'
+gh api repos/coleam00/Archon/contents/test-workflows?ref=$SHA --jq '.[].name'
+```
+
+Expected: a list of `*.yaml` filenames under `defaults/`, plus the smoke file under `test-workflows/`. Record the smoke file's exact path — it has historically been `test-workflows/e2e-pi-all-nodes-smoke.yaml`, but verify against the directory listing in case the path has moved.
+
+If `gh` is unavailable, fall back to `curl -sL https://api.github.com/repos/coleam00/Archon/contents/.archon/workflows/defaults?ref=$SHA | jq -r '.[].name'`.
+
+- [ ] **Step 2: Update `scripts/round-trip-fixtures.ts`'s `FIXTURE_LIST`**
+
+Replace the Phase 0 single-entry array with one entry per file from Step 1. Use the `archonPath` for the upstream location (e.g., `.archon/workflows/defaults/archon-fix-github-issue.yaml`), and `localName` for our flat layout (`archon-fix-github-issue.yaml`). For the smoke fixture, prefix `localName` with `_smoke-` to keep it visually grouped at the top of the directory listing — the test discovers via `readdirSync` so the prefix is harmless.
+
+- [ ] **Step 3: Run the fetcher**
+
+Run: `bun run fetch-fixtures`
+Expected: each fixture written with non-zero size, success count printed.
+
+- [ ] **Step 4: Update `packages/studio-fixtures/src/index.ts`'s `ROUND_TRIP_FIXTURE_NAMES`**
+
+Replace the single-entry array with the full list (without the `.yaml` extension). Keep alphabetical order; smoke fixture first via the `_smoke-` prefix.
+
+- [ ] **Step 5: Run the existing round-trip test (still schema-parse-only)**
+
+Run: `bun --filter='@archon-studio/core' run test`
+Expected: every new fixture passes the existing `workflowDefinitionSchema.safeParse` body. If any fail, the printed Zod error tells you which schema field is stricter than the YAML — debug against the mirrored schemas, not by relaxing the test. Likely cause: a `.openapi()` strip in Phase 0 Task 9 had a side effect (e.g., a `.default(...)` was attached via `.openapi(...)` and lost). If that happens, fix the mirror and re-run drift to confirm intentional.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add scripts/round-trip-fixtures.ts \
+        packages/studio-fixtures/src/round-trip-fixtures \
+        packages/studio-fixtures/src/index.ts
+git commit -m "test(round-trip): vendor every bundled default + smoke fixture"
+```
+
+---
+
+### Task 17: `detectVariant` pure function
+
+**Files:**
+- Create: `packages/studio-core/src/nodes/shared/detectVariant.ts`
+- Create: `packages/studio-core/tests/nodes/detectVariant.spec.ts`
+
+`detectVariant` mirrors Archon's mutual-exclusivity check from `dagNodeSchema.superRefine` — it returns the variant id when exactly one variant key is present, or a discriminated error otherwise. It does *not* validate the node's body; that's the schema's job. It's the single source of truth our importer uses to dispatch into the per-variant `fromDag`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `packages/studio-core/tests/nodes/detectVariant.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { detectVariant } from '../../src/nodes/shared/detectVariant';
+
+describe('detectVariant', () => {
+  it.each([
+    ['command', { id: 'a', command: 'foo' }],
+    ['prompt', { id: 'a', prompt: 'do it' }],
+    ['bash', { id: 'a', bash: 'echo hi' }],
+    ['script', { id: 'a', script: 'console.log(1)', runtime: 'bun' }],
+    ['loop', { id: 'a', loop: { prompt: 'p', until: 'DONE', max_iterations: 1 } }],
+    ['approval', { id: 'a', approval: { message: 'ok?' } }],
+    ['cancel', { id: 'a', cancel: 'abort' }],
+  ])('detects %s', (expected, raw) => {
+    expect(detectVariant(raw)).toEqual({ ok: true, variant: expected });
+  });
+
+  it('reports zero-variant nodes', () => {
+    expect(detectVariant({ id: 'a' })).toEqual({ ok: false, reason: 'no-variant-key' });
+  });
+
+  it('reports multi-variant nodes', () => {
+    expect(detectVariant({ id: 'a', command: 'foo', prompt: 'bar' })).toEqual({
+      ok: false,
+      reason: 'multiple-variant-keys',
+      keysPresent: ['command', 'prompt'],
+    });
+  });
+
+  it('treats empty-string command/prompt/bash/script/cancel as absent (matches Archon)', () => {
+    expect(detectVariant({ id: 'a', command: '', prompt: 'real' })).toEqual({
+      ok: true, variant: 'prompt',
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run tests — confirm they fail with module-not-found**
+
+Run: `bun --filter='@archon-studio/core' run test detectVariant`
+Expected: tests fail because `detectVariant.ts` doesn't exist yet.
+
+- [ ] **Step 3: Implement `detectVariant`**
+
+Create `packages/studio-core/src/nodes/shared/detectVariant.ts`:
+
+```ts
+import type { VariantId } from '../registry';
+
+export type DetectResult =
+  | { ok: true; variant: VariantId }
+  | { ok: false; reason: 'no-variant-key' | 'multiple-variant-keys'; keysPresent?: string[] };
+
+const VARIANT_KEYS: ReadonlyArray<{ key: string; variant: VariantId }> = [
+  { key: 'command', variant: 'command' },
+  { key: 'prompt', variant: 'prompt' },
+  { key: 'bash', variant: 'bash' },
+  { key: 'script', variant: 'script' },
+  { key: 'loop', variant: 'loop' },
+  { key: 'approval', variant: 'approval' },
+  { key: 'cancel', variant: 'cancel' },
+];
+
+/** Returns true when the value behaves as "the variant key is present and has content" — matching Archon's superRefine. */
+function isPresent(key: string, value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (key === 'loop' || key === 'approval') return typeof value === 'object';
+  // command/prompt/bash/script/cancel are string-typed; empty strings don't count.
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+export function detectVariant(raw: Record<string, unknown>): DetectResult {
+  const present = VARIANT_KEYS.filter(({ key }) => isPresent(key, raw[key]));
+  if (present.length === 0) return { ok: false, reason: 'no-variant-key' };
+  if (present.length > 1) {
+    return {
+      ok: false,
+      reason: 'multiple-variant-keys',
+      keysPresent: present.map((p) => p.key),
+    };
+  }
+  return { ok: true, variant: present[0]!.variant };
+}
+```
+
+- [ ] **Step 4: Run tests — confirm they pass**
+
+Run: `bun --filter='@archon-studio/core' run test detectVariant`
+Expected: 4/4 pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/studio-core/src/nodes/shared/detectVariant.ts \
+        packages/studio-core/tests/nodes/detectVariant.spec.ts
+git commit -m "feat(nodes): detectVariant pure function for variant-key dispatch"
+```
+
+---
+
+### Task 18: `pickBaseFields` + `_unknown` capture
+
+**Files:**
+- Create: `packages/studio-core/src/nodes/shared/pickBaseFields.ts`
+- Create: `packages/studio-core/src/nodes/shared/baseFieldKeys.ts`
+- Create: `packages/studio-core/tests/nodes/pickBaseFields.spec.ts`
+
+This is where the `_unknown` rule (spec §6.3) is realised at the node level. Given a raw DagNode object and its detected variant, partition the keys into three buckets:
+- `base` — the typed keys recognised by `dagNodeBaseSchema` (id, depends_on, when, trigger_rule, idle_timeout, retry, model, provider, context, output_format, allowed_tools, denied_tools, hooks, mcp, skills, agents, effort, thinking, maxBudgetUsd, systemPrompt, fallbackModel, betas, sandbox).
+- `variantSpecific` — the keys that are exclusive to this variant (e.g., for `bash`: `bash`, `timeout`; for `script`: `script`, `runtime`, `deps`, `timeout`).
+- `unknown` — every remaining key (the forward-compat residue).
+
+The function does not validate values — it only partitions keys.
+
+- [ ] **Step 1: Define `BASE_FIELD_KEYS` + `VARIANT_SPECIFIC_KEYS` in a separate module**
+
+Create `packages/studio-core/src/nodes/shared/baseFieldKeys.ts`:
+
+```ts
+import type { VariantId } from '../registry';
+
+/**
+ * Keys recognised by `dagNodeBaseSchema` (mirrored from Archon at the pinned SHA).
+ * If the upstream base schema gains a field, the schema-drift CI fails; update this list to match.
+ */
+export const BASE_FIELD_KEYS: readonly string[] = [
+  'id',
+  'depends_on',
+  'when',
+  'trigger_rule',
+  'idle_timeout',
+  'retry',
+  'model',
+  'provider',
+  'context',
+  'output_format',
+  'allowed_tools',
+  'denied_tools',
+  'hooks',
+  'mcp',
+  'skills',
+  'agents',
+  'effort',
+  'thinking',
+  'maxBudgetUsd',
+  'systemPrompt',
+  'fallbackModel',
+  'betas',
+  'sandbox',
+];
+
+/**
+ * Keys that are exclusive to a single variant (the variant key itself plus any keys
+ * that only appear when that variant is selected). Mirrors the per-variant `extend(...)`
+ * blocks in dag-node.ts.
+ */
+export const VARIANT_SPECIFIC_KEYS: Readonly<Record<VariantId, readonly string[]>> = {
+  command: ['command'],
+  prompt: ['prompt'],
+  bash: ['bash', 'timeout'],
+  script: ['script', 'runtime', 'deps', 'timeout'],
+  loop: ['loop'],
+  approval: ['approval'],
+  cancel: ['cancel'],
+};
+```
+
+- [ ] **Step 2: Write the failing tests**
+
+Create `packages/studio-core/tests/nodes/pickBaseFields.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { pickBaseFields } from '../../src/nodes/shared/pickBaseFields';
+
+describe('pickBaseFields', () => {
+  it('partitions a bash node into base + variant-specific + unknown', () => {
+    const raw = {
+      id: 'do-thing',
+      depends_on: ['parent'],
+      bash: 'echo hi',
+      timeout: 5000,
+      __experimental_flag: true,        // unknown
+      future_field: { nested: 1 },      // unknown
+    };
+    expect(pickBaseFields(raw, 'bash')).toEqual({
+      base: { id: 'do-thing', depends_on: ['parent'] },
+      variantSpecific: { bash: 'echo hi', timeout: 5000 },
+      unknown: { __experimental_flag: true, future_field: { nested: 1 } },
+    });
+  });
+
+  it('partitions a command node with full AI fields', () => {
+    const raw = {
+      id: 'classify',
+      command: 'classify',
+      provider: 'anthropic',
+      model: 'claude-opus-4-7',
+      output_format: { schema: { type: 'object' } },
+      ai_v2_brand_new: 'placeholder',
+    };
+    const result = pickBaseFields(raw, 'command');
+    expect(result.base).toEqual({
+      id: 'classify',
+      provider: 'anthropic',
+      model: 'claude-opus-4-7',
+      output_format: { schema: { type: 'object' } },
+    });
+    expect(result.variantSpecific).toEqual({ command: 'classify' });
+    expect(result.unknown).toEqual({ ai_v2_brand_new: 'placeholder' });
+  });
+
+  it('preserves nested foreign keys inside known objects in the unknown bag (top-level only here)', () => {
+    // pickBaseFields partitions only the top level. Nested-object preservation
+    // is handled by per-variant fromDag/toDag (§6.3 deep-merge contract).
+    const raw = { id: 'a', loop: { prompt: 'p', until: 'X', max_iterations: 1, future_knob: 7 } };
+    const result = pickBaseFields(raw, 'loop');
+    expect(result.unknown).toEqual({});
+    expect(result.variantSpecific).toEqual({
+      loop: { prompt: 'p', until: 'X', max_iterations: 1, future_knob: 7 },
+    });
+  });
+});
+```
+
+- [ ] **Step 3: Run tests — confirm they fail with module-not-found**
+
+Run: `bun --filter='@archon-studio/core' run test pickBaseFields`
+Expected: tests fail.
+
+- [ ] **Step 4: Implement `pickBaseFields`**
+
+Create `packages/studio-core/src/nodes/shared/pickBaseFields.ts`:
+
+```ts
+import type { VariantId } from '../registry';
+import { BASE_FIELD_KEYS, VARIANT_SPECIFIC_KEYS } from './baseFieldKeys';
+
+export interface PickedNodeFields {
+  base: Record<string, unknown>;
+  variantSpecific: Record<string, unknown>;
+  unknown: Record<string, unknown>;
+}
+
+export function pickBaseFields(raw: Record<string, unknown>, variant: VariantId): PickedNodeFields {
+  const baseSet = new Set(BASE_FIELD_KEYS);
+  const variantSet = new Set(VARIANT_SPECIFIC_KEYS[variant]);
+
+  const result: PickedNodeFields = { base: {}, variantSpecific: {}, unknown: {} };
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    if (variantSet.has(key)) {
+      result.variantSpecific[key] = value;
+    } else if (baseSet.has(key)) {
+      result.base[key] = value;
+    } else {
+      result.unknown[key] = value;
+    }
+  }
+  return result;
+}
+```
+
+- [ ] **Step 5: Run tests — confirm they pass**
+
+Run: `bun --filter='@archon-studio/core' run test pickBaseFields`
+Expected: 3/3 pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-core/src/nodes/shared/baseFieldKeys.ts \
+        packages/studio-core/src/nodes/shared/pickBaseFields.ts \
+        packages/studio-core/tests/nodes/pickBaseFields.spec.ts
+git commit -m "feat(nodes): pickBaseFields partitions raw DagNode for _unknown forward-compat"
+```
+
+---
+
+### Task 19: `VariantDefinition` contract + central registry
+
+**Files:**
+- Modify: `packages/studio-core/src/nodes/registry.ts` (replace Phase 0 skeleton — types + helper only)
+- Create: `packages/studio-core/src/nodes/default-registry.ts` (static imports + pre-wired registry; landed here in Task 19, populated by Tasks 20–26)
+- Create: `packages/studio-core/src/nodes/shared/types.ts`
+- Create: `packages/studio-core/tests/nodes/registry.spec.ts`
+
+Define the data-only slice of `VariantDefinition` that Phase 1 ships. Phase 3 augments with `Renderer`, Phase 4 with `Inspector`. Until then, both fields are typed as optional (`?`) and per-variant index modules omit them.
+
+**Module split:** `registry.ts` is contract-only (types, `VARIANT_IDS`, `buildRegistry`). `default-registry.ts` does the seven static `import`s, calls `buildRegistry({...})`, and exports `defaultRegistry` + `getVariant(id)`. Static imports keep Vite/Rollup happy and avoid CJS `require()`. Per-variant modules import only the **types** from `registry.ts`, which TypeScript erases at emit — no runtime cycle.
+
+- [ ] **Step 1: Define shared types**
+
+Create `packages/studio-core/src/nodes/shared/types.ts`:
+
+```ts
+import type { z } from 'zod';
+import type { VariantId } from '../registry';
+import type { DagNode } from '../../schemas';
+
+/**
+ * Variant capabilities — drive Inspector tab visibility (Phase 4) and validator
+ * behaviour. Mirrors the runtime semantics of dag-executor.ts at the pinned SHA.
+ */
+export interface VariantCapabilities {
+  /** false → bash/script/cancel/approval ignore provider/model/tools at runtime. */
+  honorsAiFields: boolean;
+  /** true on loop — `retry` is rejected by Archon's superRefine. */
+  forbidsRetry: boolean;
+  /** true on approval and interactive loops — Archon pauses execution. */
+  requiresInteractive?: boolean;
+}
+
+/** NodeLibrary metadata — used by Phase 3 to render the left palette. */
+export interface VariantLibraryMetadata {
+  label: string;
+  description: string;
+  /** CSS-variable-friendly token name (e.g. 'command' → `var(--node-command)`). */
+  colorToken: string;
+  /** Lucide icon name (the actual import happens in Phase 3). */
+  iconName: string;
+  /** Default id prefix when adding a fresh node ('classify', 'gate', etc.). */
+  defaultIdHint: string;
+}
+
+/**
+ * In-store representation of a node. Distinct from `DagNode` (the wire shape)
+ * to keep the editor's data structure stable as Archon's schema evolves.
+ */
+export interface BuilderNode<TData = unknown> {
+  /** The user-authored id; matches the YAML `id:` field and React Flow's `id`. */
+  id: string;
+  variant: VariantId;
+  /** Variant-specific data shape (see per-variant data.ts). */
+  data: TData;
+  /**
+   * Top-level DagNode keys our schema doesn't recognise. Spread back on export.
+   * Empty object when the source was fully recognised.
+   */
+  unknown: Record<string, unknown>;
+}
+
+/** Reusable types passed to per-variant fromDag/toDag. */
+export type BaseFields = Record<string, unknown>;
+export type VariantSpecificFields = Record<string, unknown>;
+
+/** Shape of a per-variant module's contribution to the registry (Phase 1 data slice). */
+export interface VariantDefinition<TData> {
+  id: VariantId;
+  capabilities: VariantCapabilities;
+  library: VariantLibraryMetadata;
+  schema: z.ZodTypeAny;
+  /** Build a fresh TData for "Add node" actions (Phase 2 wires this up). */
+  createDefault: () => TData;
+  /**
+   * Pure mapping: raw partitioned fields → typed TData.
+   * Receives base/variantSpecific from pickBaseFields and the upstream DagNode for diagnostics.
+   */
+  fromDag: (input: { base: BaseFields; variantSpecific: VariantSpecificFields; raw: DagNode }) => TData;
+  /** Inverse of fromDag — produces the variant-specific subset of a DagNode. */
+  toDag: (data: TData) => Partial<DagNode>;
+  // Phase 3 adds: Renderer; Phase 4 adds: Inspector.
+}
+```
+
+- [ ] **Step 2: Replace `nodes/registry.ts` with the contract-only module**
+
+Replace the Phase 0 skeleton with:
+
+```ts
+import type { VariantDefinition } from './shared/types';
+
+export type VariantId =
+  | 'command'
+  | 'prompt'
+  | 'bash'
+  | 'script'
+  | 'loop'
+  | 'approval'
+  | 'cancel';
+
+export const VARIANT_IDS: readonly VariantId[] = [
+  'command',
+  'prompt',
+  'bash',
+  'script',
+  'loop',
+  'approval',
+  'cancel',
+] as const;
+
+export type VariantRegistry = {
+  readonly [K in VariantId]: VariantDefinition<unknown>;
+};
+
+/**
+ * Build a typed registry from a per-variant lookup. Throws if any variant is missing
+ * or declares a mismatching id. Per-variant modules are the only registrants;
+ * consumer code reads via `getVariant` (in `default-registry.ts`).
+ */
+export function buildRegistry(entries: {
+  [K in VariantId]: VariantDefinition<unknown>;
+}): VariantRegistry {
+  for (const id of VARIANT_IDS) {
+    if (!entries[id]) throw new Error(`Variant registry missing: ${id}`);
+    if (entries[id].id !== id) {
+      throw new Error(`Variant registry mismatch: entry under '${id}' declares id '${entries[id].id}'`);
+    }
+  }
+  return entries;
+}
+```
+
+- [ ] **Step 2b: Create the pre-wired default registry**
+
+Create `packages/studio-core/src/nodes/default-registry.ts`:
+
+```ts
+import { buildRegistry, type VariantId, type VariantRegistry } from './registry';
+import type { VariantDefinition } from './shared/types';
+import { commandVariant } from './command';
+import { promptVariant } from './prompt';
+import { bashVariant } from './bash';
+import { scriptVariant } from './script';
+import { loopVariant } from './loop';
+import { approvalVariant } from './approval';
+import { cancelVariant } from './cancel';
+
+export const defaultRegistry: VariantRegistry = buildRegistry({
+  command: commandVariant,
+  prompt: promptVariant,
+  bash: bashVariant,
+  script: scriptVariant,
+  loop: loopVariant,
+  approval: approvalVariant,
+  cancel: cancelVariant,
+});
+
+export function getVariant<TData = unknown>(id: VariantId): VariantDefinition<TData> {
+  return defaultRegistry[id] as VariantDefinition<TData>;
+}
+```
+
+This file imports the seven per-variant modules eagerly via static `import`. Vite/Rollup tree-shake correctly; tests in CI compile cleanly. The per-variant modules import only types (`VariantId`, `VariantDefinition`) from `registry.ts`, which TypeScript erases — no runtime cycle.
+
+**Bootstrap order:** until Tasks 20–26 ship the per-variant `<v>Variant` exports, the seven static imports in `default-registry.ts` will fail to type-check. To break the chicken-and-egg, **commit `default-registry.ts` only after Task 26 lands** — Step 6 of this task ships only `registry.ts` + `shared/types.ts` + a skipped registry test. Step 6 of Task 26 adds `default-registry.ts` and un-skips the test.
+
+- [ ] **Step 3: Write registry tests**
+
+Create `packages/studio-core/tests/nodes/registry.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { VARIANT_IDS } from '../../src/nodes/registry';
+import { defaultRegistry, getVariant } from '../../src/nodes/default-registry';
+
+describe.skip('default variant registry', () => {
+  // Un-skipped in Task 26 once all 7 per-variant modules ship.
+  it('contains all 7 variant ids', () => {
+    for (const id of VARIANT_IDS) {
+      expect(defaultRegistry[id]).toBeDefined();
+      expect(defaultRegistry[id].id).toBe(id);
+    }
+  });
+
+  it('exposes a variant by id', () => {
+    expect(getVariant('command').id).toBe('command');
+    expect(getVariant('cancel').id).toBe('cancel');
+  });
+
+  it('every variant has capabilities + library metadata + schema + createDefault + fromDag + toDag', () => {
+    for (const id of VARIANT_IDS) {
+      const v = getVariant(id);
+      expect(v.capabilities).toBeDefined();
+      expect(v.library.label).toBeTruthy();
+      expect(v.library.colorToken).toBeTruthy();
+      expect(typeof v.createDefault).toBe('function');
+      expect(typeof v.fromDag).toBe('function');
+      expect(typeof v.toDag).toBe('function');
+    }
+  });
+});
+```
+
+The `describe.skip` is intentional — `default-registry.ts` doesn't exist yet (it's added in Task 26 after all variants ship). Importing from a non-existent module would fail. Step 4 amends.
+
+- [ ] **Step 4: Adjust the test file so it compiles before `default-registry.ts` exists**
+
+In Step 3 the test imports from `../../src/nodes/default-registry`, which won't exist until Task 26. To keep this task's commit type-clean, replace those two imports with stubs commented out:
+
+```ts
+// Imports re-enabled in Task 26 along with default-registry.ts.
+// import { defaultRegistry, getVariant } from '../../src/nodes/default-registry';
+const defaultRegistry = {} as Record<string, never>;
+const getVariant = (_id: string) => ({}) as never;
+```
+
+The `describe.skip` ensures the stub assertions never run. Task 26's Step 6 restores the real imports and removes the `.skip`.
+
+- [ ] **Step 5: Verify `bun build` is still green (no type errors)**
+
+Run: `bun --filter='@archon-studio/core' run build`
+Expected: zero errors. `registry.ts` is contract-only (no per-variant imports). `shared/types.ts` is types-only. The skipped test compiles against the stubs.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-core/src/nodes/registry.ts \
+        packages/studio-core/src/nodes/shared/types.ts \
+        packages/studio-core/tests/nodes/registry.spec.ts
+git commit -m "feat(nodes): VariantDefinition contract + buildRegistry helper"
+```
+
+(`default-registry.ts` is NOT staged here — it lands in Task 26 after the per-variant modules exist.)
+
+---
+
+### Tasks 20–26: Per-variant data modules (template + per-variant differences)
+
+These seven tasks all follow the same template. The differences live in **the variant TData shape**, **what `fromDag` extracts**, **what `toDag` produces**, and **library metadata**. Implement them in this order; round-trip support arrives task-by-task.
+
+**Per-variant template (apply to each task):**
+
+For variant `<V>`, create:
+- `packages/studio-core/src/nodes/<V>/data.ts` — exports `<V>NodeData` (the TData), `create<V>Default()`, `<V>Capabilities`, `<V>Library`.
+- `packages/studio-core/src/nodes/<V>/fromDag.ts` — exports `<V>FromDag({ base, variantSpecific, raw })`.
+- `packages/studio-core/src/nodes/<V>/toDag.ts` — exports `<V>ToDag(data: <V>NodeData): Partial<DagNode>`.
+- `packages/studio-core/src/nodes/<V>/index.ts` — composes `<V>Variant: VariantDefinition<<V>NodeData>` from the three files + the variant's mirrored Zod schema.
+- `packages/studio-core/tests/nodes/variants/<V>.spec.ts` — unit tests for `fromDag`, `toDag`, and round-trip `toDag(fromDag(x))` on a representative DagNode.
+
+**TDD per task:** write the test, watch it fail, implement, watch it pass, commit.
+
+**The capabilities table** (declared verbatim in each `data.ts`):
+
+| Variant | honorsAiFields | forbidsRetry | requiresInteractive |
+|---|---|---|---|
+| `command` | true | false | undefined |
+| `prompt` | true | false | undefined |
+| `bash` | false | false | undefined |
+| `script` | false | false | undefined |
+| `loop` | true | true | depends on `data.interactive` |
+| `approval` | false | false | true |
+| `cancel` | false | false | undefined |
+
+**Library metadata table:**
+
+| Variant | label | description | colorToken | iconName | defaultIdHint |
+|---|---|---|---|---|---|
+| `command` | "Command" | "Run a named command from `.archon/commands/`" | `node-command` | `Terminal` | `run-command` |
+| `prompt` | "Prompt" | "Inline AI prompt — no command file" | `node-prompt` | `Sparkles` | `prompt` |
+| `bash` | "Bash" | "Shell script — no AI" | `node-bash` | `SquareTerminal` | `bash` |
+| `script` | "Script" | "TypeScript or Python via Bun/uv" | `node-script` | `FileCode` | `script` |
+| `loop` | "Loop" | "AI prompt looped until completion signal" | `node-loop` | `RefreshCw` | `loop` |
+| `approval` | "Approval" | "Pause for human review" | `node-approval` | `UserCheck` | `approve` |
+| `cancel` | "Cancel" | "Terminate the workflow with a reason" | `node-cancel` | `XOctagon` | `cancel` |
+
+**Per-variant TData shapes** — kept deliberately close to the wire shape so `fromDag` is mostly a partition + cast. Foreign top-level keys go to `BuilderNode.unknown` (not into TData).
+
+**Variant-specific `fromDag` / `toDag` rules:**
+
+| Variant | Variant-specific fields handled by fromDag/toDag |
+|---|---|
+| `command` | `command: string` |
+| `prompt` | `prompt: string` |
+| `bash` | `bash: string`, `timeout?: number` |
+| `script` | `script: string`, `runtime: 'bun' \| 'uv'`, `deps?: string[]`, `timeout?: number` |
+| `loop` | `loop: LoopNodeConfig` (the entire object — preserved verbatim) |
+| `approval` | `approval: { message, capture_response?, on_reject? }` |
+| `cancel` | `cancel: string` |
+
+The base fields (id, depends_on, when, trigger_rule, etc.) are NOT carried in TData — they live on the `BuilderNode`'s outer envelope (the importer/exporter handles them centrally; the per-variant module owns only the variant-specific subset).
+
+**Per-task structure (use this template; differences come from the tables above):**
+
+For Task 20 (`command`), each variant task expands the template like this:
+
+```
+### Task 20: command variant module
+
+**Files:**
+- Create: packages/studio-core/src/nodes/command/data.ts
+- Create: packages/studio-core/src/nodes/command/fromDag.ts
+- Create: packages/studio-core/src/nodes/command/toDag.ts
+- Create: packages/studio-core/src/nodes/command/index.ts (replaces Phase 0 placeholder)
+- Create: packages/studio-core/tests/nodes/variants/command.spec.ts
+
+- [ ] Step 1: Write failing test (round-trip on a representative CommandNode + capability assertions)
+- [ ] Step 2: Run test — fails (modules don't exist)
+- [ ] Step 3: Implement data.ts (TData shape + createDefault + capabilities + library)
+- [ ] Step 4: Implement fromDag.ts (partition.variantSpecific.command → CommandNodeData.command)
+- [ ] Step 5: Implement toDag.ts (CommandNodeData → { command })
+- [ ] Step 6: Implement index.ts (compose VariantDefinition; export commandVariant)
+- [ ] Step 7: Run test — passes
+- [ ] Step 8: Commit (one commit per variant: `feat(nodes/command): variant module`)
+```
+
+The test for `command` looks like:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { commandVariant } from '../../../src/nodes/command';
+
+describe('command variant', () => {
+  it('createDefault returns valid empty CommandNodeData', () => {
+    const d = commandVariant.createDefault();
+    expect(d.command).toBe('');
+  });
+  it('fromDag extracts the command name', () => {
+    const data = commandVariant.fromDag({
+      base: { id: 'a' },
+      variantSpecific: { command: 'classify' },
+      raw: { id: 'a', command: 'classify' } as never,
+    });
+    expect(data).toEqual({ command: 'classify' });
+  });
+  it('toDag produces { command }', () => {
+    expect(commandVariant.toDag({ command: 'classify' })).toEqual({ command: 'classify' });
+  });
+  it('declares honorsAiFields = true and forbidsRetry = false', () => {
+    expect(commandVariant.capabilities.honorsAiFields).toBe(true);
+    expect(commandVariant.capabilities.forbidsRetry).toBe(false);
+  });
+});
+```
+
+Replicate this structure for **Tasks 21–26** (`prompt`, `bash`, `script`, `loop`, `approval`, `cancel`), substituting the variant-specific fields per the tables above. The interesting variants:
+
+- **Task 23 (`script`)**: `runtime` is required; test that `createDefault` returns `runtime: 'bun'` and `script: ''`. `fromDag` carries through `runtime`, `deps?`, `timeout?` verbatim.
+- **Task 24 (`loop`)**: TData is `{ loop: LoopNodeConfig }`. `fromDag` lifts `variantSpecific.loop` verbatim — the importer never calls `loopNodeConfigSchema.parse()`, so foreign sub-keys inside the `loop` object survive by reference regardless of whether the schema declares `.passthrough()`. `toDag` returns `{ loop: data.loop }`. Add a test `it('preserves nested foreign keys inside loop config on round-trip')` that imports `{ id: 'l', loop: { prompt: 'p', until: 'X', max_iterations: 1, future_loop_knob: 7 } }` and asserts `toDag(fromDag(...))` returns `{ loop: { ..., future_loop_knob: 7 } }`.
+- **Task 25 (`approval`)**: TData is `{ approval: { message: string; capture_response?: boolean; on_reject?: ApprovalOnReject } }`. `requiresInteractive` capability is `true`. Test that `on_reject.max_attempts` round-trips.
+- **Task 26 (`cancel`)**: TData is `{ cancel: string }`. Test the trim semantics — Archon's transform calls `.trim()` on the cancel reason; our `toDag` should produce the trimmed value.
+
+**Task 26 closes the chain.** After Task 26 implements `cancelVariant`, add one extra closing step before its commit:
+
+- **Task 26, Step 9 (registry wire-up):** Create `packages/studio-core/src/nodes/default-registry.ts` per the body in Task 19 Step 2b. Restore the real imports in `tests/nodes/registry.spec.ts` (replace the stubs from Task 19 Step 4 with `import { defaultRegistry, getVariant } from '../../src/nodes/default-registry';`). Remove the `.skip` on the `describe('default variant registry', ...)` block.
+- **Task 26, Step 10 (verify):** Run `bun --filter='@archon-studio/core' run test`. Expected: every variant test passes AND the registry test (now un-skipped) passes its 3 assertions.
+- **Task 26, Step 11 (commit):** Stage `cancel/`, `default-registry.ts`, and the registry test edits in one commit: `feat(nodes/cancel): variant module + wire all 7 into default-registry`.
+
+**Commit cadence:** one commit per variant task. Tasks 20–25 each commit only the variant they implement. Task 26 commits cancel + the default-registry wire-up together (so the registry test transitions from skipped to passing in a single commit).
+
+**Phase-1-equivalent issue to watch:** Phase 0 Task 5 caught a TypeScript noUnusedLocals trap on `private readonly options`. Same risk here on per-variant `data.ts` files that declare unused capability fields — keep them as `export const xxxCapabilities: VariantCapabilities = {…}` (top-level value, not a class field).
+
+---
+
+### Task 27: Zustand store rewrite — workflow-JSON-as-truth + cascading rename (depends_on + when)
+
+**Files:**
+- Modify: `packages/studio-core/src/store/builder-store.ts` (replace Phase 0 skeleton)
+- Create: `packages/studio-core/tests/store/builder-store.spec.ts`
+
+The store carries the in-flight workflow. **Workflow JSON is authoritative**, including `_unknown` bags. Phase 1's store knows nothing about positions, selections, or undo — those land in Phase 2 and Phase 8.
+
+**Rename scope (Phase 1):** the cascade traverses `depends_on` arrays and `when:` strings. `$nodeId.output` body references in `prompt`/`bash`/`script`/`loop.prompt`/`approval.message` bodies are **explicitly deferred to Phase 4** (when the inspector autocomplete lands and per-variant body-ref metadata is meaningful). No Phase 1 UI exposes rename, so the gap is dead-code-only.
+
+State shape:
+
+```ts
+interface WorkflowMeta {
+  name: string;
+  description: string;
+  base: Record<string, unknown>;     // typed workflow-base fields (provider, model, etc.)
+  unknown: Record<string, unknown>;  // top-level workflow keys we don't recognise
+}
+
+interface BuilderState {
+  workflow: WorkflowMeta | null;
+  nodes: BuilderNode[];               // includes id, variant, data, unknown, base
+  // Edges are derived from depends_on; keep nodes authoritative and recompute.
+}
+```
+
+`BuilderNode` from Task 19 gets a `base` field added in this task — to carry typed base fields (depends_on, when, trigger_rule, etc.) on the node envelope. (Variant-specific data lives in `data`; foreign top-level keys live in `unknown`.) Update `shared/types.ts` accordingly.
+
+- [ ] **Step 1: Update `BuilderNode` to carry `base`**
+
+Edit `packages/studio-core/src/nodes/shared/types.ts` and extend `BuilderNode`:
+
+```ts
+export interface BuilderNode<TData = unknown> {
+  id: string;
+  variant: VariantId;
+  data: TData;
+  /** Typed base fields (depends_on, when, trigger_rule, idle_timeout, retry, hooks, etc.). */
+  base: Record<string, unknown>;
+  /** Top-level keys not in our schema. */
+  unknown: Record<string, unknown>;
+}
+```
+
+- [ ] **Step 2: Write failing tests**
+
+Create `packages/studio-core/tests/store/builder-store.spec.ts`:
+
+```ts
+import { describe, it, expect, beforeEach } from 'bun:test';
+import { useBuilderStore } from '../../src/store/builder-store';
+
+describe('builder-store', () => {
+  beforeEach(() => useBuilderStore.getState().clearWorkflow());
+
+  it('starts empty', () => {
+    expect(useBuilderStore.getState().workflow).toBeNull();
+    expect(useBuilderStore.getState().nodes).toEqual([]);
+  });
+
+  it('loadWorkflow seeds workflow + nodes', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'a', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} },
+      ],
+    });
+    expect(useBuilderStore.getState().workflow?.name).toBe('w');
+    expect(useBuilderStore.getState().nodes).toHaveLength(1);
+  });
+
+  it('updateNode patches data.command', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'a', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} },
+      ],
+    });
+    useBuilderStore.getState().updateNode('a', { data: { command: 'bar' } });
+    const a = useBuilderStore.getState().nodes.find((n) => n.id === 'a')!;
+    expect((a.data as { command: string }).command).toBe('bar');
+  });
+
+  it('renameNode cascades through depends_on', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'classify', variant: 'command', data: { command: 'c' }, base: {}, unknown: {} },
+        {
+          id: 'act',
+          variant: 'command',
+          data: { command: 'a' },
+          base: { depends_on: ['classify'] },
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().renameNode('classify', 'sort');
+    const act = useBuilderStore.getState().nodes.find((n) => n.id === 'act')!;
+    expect(act.base.depends_on).toEqual(['sort']);
+  });
+
+  it('renameNode cascades through when: strings', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'classify', variant: 'command', data: { command: 'c' }, base: {}, unknown: {} },
+        {
+          id: 'act',
+          variant: 'command',
+          data: { command: 'a' },
+          base: { when: "$classify.output == 'ok'" },
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().renameNode('classify', 'sort');
+    const act = useBuilderStore.getState().nodes.find((n) => n.id === 'act')!;
+    expect(act.base.when).toBe("$sort.output == 'ok'");
+  });
+
+  it('renameNode rejects collisions', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'a', variant: 'command', data: { command: 'a' }, base: {}, unknown: {} },
+        { id: 'b', variant: 'command', data: { command: 'b' }, base: {}, unknown: {} },
+      ],
+    });
+    expect(() => useBuilderStore.getState().renameNode('a', 'b')).toThrow();
+  });
+
+  it('deleteNodes removes target + clears references in others depends_on', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'a', variant: 'command', data: { command: 'a' }, base: {}, unknown: {} },
+        {
+          id: 'b',
+          variant: 'command',
+          data: { command: 'b' },
+          base: { depends_on: ['a'] },
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().deleteNodes(['a']);
+    const nodes = useBuilderStore.getState().nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.base.depends_on).toBeUndefined();
+  });
+});
+```
+
+- [ ] **Step 3: Run tests — fail**
+
+Run: `bun --filter='@archon-studio/core' run test builder-store`
+Expected: tests fail (store skeleton lacks these methods).
+
+- [ ] **Step 4: Implement the store**
+
+Replace `packages/studio-core/src/store/builder-store.ts`:
+
+```ts
+import { create } from 'zustand';
+import type { BuilderNode } from '../nodes/shared/types';
+import type { VariantId } from '../nodes/registry';
+
+export interface WorkflowMeta {
+  name: string;
+  description: string;
+  base: Record<string, unknown>;
+  unknown: Record<string, unknown>;
+}
+
+export interface LoadWorkflowInput {
+  meta: WorkflowMeta;
+  nodes: BuilderNode[];
+}
+
+export interface BuilderState {
+  workflow: WorkflowMeta | null;
+  nodes: BuilderNode[];
+
+  loadWorkflow: (input: LoadWorkflowInput) => void;
+  clearWorkflow: () => void;
+
+  setWorkflowName: (name: string) => void;
+  setWorkflowDescription: (description: string) => void;
+
+  addNode: (node: BuilderNode) => void;
+  updateNode: (id: string, patch: Partial<BuilderNode>) => void;
+  deleteNodes: (ids: string[]) => void;
+
+  connect: (source: string, target: string) => void;
+  disconnect: (source: string, target: string) => void;
+  renameNode: (oldId: string, newId: string) => void;
+}
+
+export const useBuilderStore = create<BuilderState>((set, get) => ({
+  workflow: null,
+  nodes: [],
+
+  loadWorkflow: ({ meta, nodes }) => set({ workflow: meta, nodes }),
+  clearWorkflow: () => set({ workflow: null, nodes: [] }),
+
+  setWorkflowName: (name) =>
+    set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
+  setWorkflowDescription: (description) =>
+    set((s) => (s.workflow ? { workflow: { ...s.workflow, description } } : s)),
+
+  addNode: (node) =>
+    set((s) => {
+      if (s.nodes.some((n) => n.id === node.id)) {
+        throw new Error(`addNode: id collision '${node.id}'`);
+      }
+      return { nodes: [...s.nodes, node] };
+    }),
+
+  updateNode: (id, patch) =>
+    set((s) => ({
+      nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+    })),
+
+  deleteNodes: (ids) => {
+    const idSet = new Set(ids);
+    set((s) => ({
+      nodes: s.nodes
+        .filter((n) => !idSet.has(n.id))
+        .map((n) => {
+          const dep = (n.base.depends_on as string[] | undefined) ?? undefined;
+          if (!dep) return n;
+          const filtered = dep.filter((d) => !idSet.has(d));
+          const newBase = { ...n.base };
+          if (filtered.length === 0) delete newBase.depends_on;
+          else newBase.depends_on = filtered;
+          return { ...n, base: newBase };
+        }),
+    }));
+  },
+
+  connect: (source, target) =>
+    set((s) => ({
+      nodes: s.nodes.map((n) => {
+        if (n.id !== target) return n;
+        const dep = (n.base.depends_on as string[] | undefined) ?? [];
+        if (dep.includes(source)) return n;
+        return { ...n, base: { ...n.base, depends_on: [...dep, source] } };
+      }),
+    })),
+
+  disconnect: (source, target) =>
+    set((s) => ({
+      nodes: s.nodes.map((n) => {
+        if (n.id !== target) return n;
+        const dep = (n.base.depends_on as string[] | undefined) ?? [];
+        const filtered = dep.filter((d) => d !== source);
+        const newBase = { ...n.base };
+        if (filtered.length === 0) delete newBase.depends_on;
+        else newBase.depends_on = filtered;
+        return { ...n, base: newBase };
+      }),
+    })),
+
+  renameNode: (oldId, newId) => {
+    if (oldId === newId) return;
+    const state = get();
+    if (state.nodes.some((n) => n.id === newId)) {
+      throw new Error(`renameNode: collision — '${newId}' already exists`);
+    }
+    if (!state.nodes.some((n) => n.id === oldId)) {
+      throw new Error(`renameNode: '${oldId}' not found`);
+    }
+
+    // Cascading rename — see spec §5.2 / §7.4.
+    const renameRefs = (n: BuilderNode): BuilderNode => {
+      const next: BuilderNode = { ...n, base: { ...n.base } };
+      // 1. id itself
+      if (next.id === oldId) next.id = newId;
+      // 2. depends_on
+      const dep = (next.base.depends_on as string[] | undefined) ?? undefined;
+      if (dep) next.base.depends_on = dep.map((d) => (d === oldId ? newId : d));
+      // 3. when: strings ($oldId.* → $newId.*)
+      const w = next.base.when as string | undefined;
+      if (typeof w === 'string') {
+        next.base.when = w.replace(
+          new RegExp(`\\$${escapeRegExp(oldId)}\\b`, 'g'),
+          `$${newId}`,
+        );
+      }
+      // Phase 4 will extend with: $nodeId.output body refs in prompt/bash/script/
+      // loop.prompt/approval.message via per-variant `renameBodyRefs(data, oldId, newId)`.
+      // No Phase 1 UI exposes renameNode, so the gap is dead-code-only today.
+      return next;
+    };
+    set({ nodes: state.nodes.map(renameRefs) });
+  },
+}));
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+```
+
+- [ ] **Step 5: Run tests — pass**
+
+Run: `bun --filter='@archon-studio/core' run test builder-store`
+Expected: 7/7 pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-core/src/store/builder-store.ts \
+        packages/studio-core/src/nodes/shared/types.ts \
+        packages/studio-core/tests/store/builder-store.spec.ts
+git commit -m "feat(store): workflow-JSON-as-truth + cascading rename through depends_on/when"
+```
+
+---
+
+### Task 28: `fromWorkflowDefinition` importer
+
+**Files:**
+- Create: `packages/studio-core/src/exporter/fromWorkflowDefinition.ts`
+- Create: `packages/studio-core/tests/exporter/fromWorkflowDefinition.spec.ts`
+
+Pure function: takes a `WorkflowDefinition`-shaped raw object → `LoadWorkflowInput` (the store's input shape from Task 27). Composes `detectVariant`, `pickBaseFields`, and per-variant `fromDag`. Captures `_unknown` at workflow-base level too.
+
+**Workflow-base known keys** (mirrored from `workflowBaseSchema` in workflow.ts at the pinned SHA):
+
+```
+name, description, provider, model, modelReasoningEffort, webSearchMode,
+additionalDirectories, interactive, effort, thinking, fallbackModel, betas,
+sandbox, worktree, mutates_checkout, tags
+```
+
+(Plus `nodes` which is never `_unknown` — it's structurally required.)
+
+- [ ] **Step 1: Write failing tests**
+
+Create `packages/studio-core/tests/exporter/fromWorkflowDefinition.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { fromWorkflowDefinition } from '../../src/exporter/fromWorkflowDefinition';
+
+describe('fromWorkflowDefinition', () => {
+  it('imports a minimal command workflow', () => {
+    const result = fromWorkflowDefinition({
+      name: 'w',
+      description: 'd',
+      nodes: [{ id: 'a', command: 'classify' }],
+    });
+    expect(result.meta.name).toBe('w');
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]!.variant).toBe('command');
+    expect((result.nodes[0]!.data as { command: string }).command).toBe('classify');
+  });
+
+  it('captures unknown workflow-base + node-level keys', () => {
+    const result = fromWorkflowDefinition({
+      name: 'w',
+      description: 'd',
+      future_workflow_knob: 'experimental',
+      nodes: [
+        { id: 'a', command: 'classify', __experimental_node_flag: true },
+      ],
+    });
+    expect(result.meta.unknown).toEqual({ future_workflow_knob: 'experimental' });
+    expect(result.nodes[0]!.unknown).toEqual({ __experimental_node_flag: true });
+  });
+
+  it('partitions every variant correctly across a mixed workflow', () => {
+    const result = fromWorkflowDefinition({
+      name: 'mixed',
+      description: 'all variants',
+      nodes: [
+        { id: 'c', command: 'foo' },
+        { id: 'p', prompt: 'do', depends_on: ['c'] },
+        { id: 'b', bash: 'echo', timeout: 1000 },
+        { id: 's', script: 'export {}', runtime: 'bun' },
+        { id: 'l', loop: { prompt: 'p', until: 'X', max_iterations: 3 } },
+        { id: 'a', approval: { message: 'go?' } },
+        { id: 'x', cancel: 'abort' },
+      ],
+    });
+    expect(result.nodes.map((n) => n.variant)).toEqual([
+      'command',
+      'prompt',
+      'bash',
+      'script',
+      'loop',
+      'approval',
+      'cancel',
+    ]);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests — fail**
+
+Run: `bun --filter='@archon-studio/core' run test fromWorkflowDefinition`
+Expected: fails (module doesn't exist).
+
+- [ ] **Step 3: Implement the importer**
+
+Create `packages/studio-core/src/exporter/fromWorkflowDefinition.ts`:
+
+```ts
+import { detectVariant } from '../nodes/shared/detectVariant';
+import { pickBaseFields } from '../nodes/shared/pickBaseFields';
+import { getVariant } from '../nodes/registry';
+import type { BuilderNode } from '../nodes/shared/types';
+import type { LoadWorkflowInput } from '../store/builder-store';
+
+// `name` and `description` are handled separately above; this set covers the rest of workflowBaseSchema.
+const WORKFLOW_BASE_KEYS = new Set([
+  'provider',
+  'model',
+  'modelReasoningEffort',
+  'webSearchMode',
+  'additionalDirectories',
+  'interactive',
+  'effort',
+  'thinking',
+  'fallbackModel',
+  'betas',
+  'sandbox',
+  'worktree',
+  'mutates_checkout',
+  'tags',
+]);
+
+export function fromWorkflowDefinition(raw: Record<string, unknown>): LoadWorkflowInput {
+  const name = String(raw.name ?? '');
+  const description = String(raw.description ?? '');
+
+  const base: Record<string, unknown> = {};
+  const unknown: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'nodes' || key === 'name' || key === 'description') continue;
+    if (value === undefined) continue;
+    if (WORKFLOW_BASE_KEYS.has(key)) base[key] = value;
+    else unknown[key] = value;
+  }
+
+  const rawNodes = (raw.nodes as Array<Record<string, unknown>>) ?? [];
+  const nodes: BuilderNode[] = rawNodes.map((rawNode) => {
+    const detection = detectVariant(rawNode);
+    if (!detection.ok) {
+      throw new Error(
+        `fromWorkflowDefinition: node '${String(rawNode.id)}' — ${detection.reason}` +
+          ('keysPresent' in detection ? ` (${detection.keysPresent!.join(', ')})` : ''),
+      );
+    }
+    const partitioned = pickBaseFields(rawNode, detection.variant);
+    const variant = getVariant(detection.variant);
+    const data = variant.fromDag({
+      base: partitioned.base,
+      variantSpecific: partitioned.variantSpecific,
+      raw: rawNode as never,
+    });
+    // Strip 'id' from base — it's the node envelope's identity.
+    const { id: _id, ...baseSansId } = partitioned.base;
+    return {
+      id: String(rawNode.id),
+      variant: detection.variant,
+      data,
+      base: baseSansId,
+      unknown: partitioned.unknown,
+    };
+  });
+
+  return { meta: { name, description, base, unknown }, nodes };
+}
+```
+
+- [ ] **Step 4: Run tests — pass**
+
+Run: `bun --filter='@archon-studio/core' run test fromWorkflowDefinition`
+Expected: 3/3 pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/studio-core/src/exporter/fromWorkflowDefinition.ts \
+        packages/studio-core/tests/exporter/fromWorkflowDefinition.spec.ts
+git commit -m "feat(exporter): fromWorkflowDefinition — parse → store, _unknown captured at every level"
+```
+
+---
+
+### Task 29: `toWorkflowDefinition` exporter
+
+**Files:**
+- Create: `packages/studio-core/src/exporter/toWorkflowDefinition.ts`
+- Create: `packages/studio-core/tests/exporter/toWorkflowDefinition.spec.ts`
+
+Inverse of Task 28. Takes the store's `{ meta, nodes }` → a raw `WorkflowDefinition`-shaped object. Each node's output is `{ id, ...base, ...variant.toDag(data), ...unknown }`. The workflow envelope is `{ name, description, ...meta.base, ...meta.unknown, nodes: [...] }`.
+
+- [ ] **Step 1: Write failing tests**
+
+Create `packages/studio-core/tests/exporter/toWorkflowDefinition.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { toWorkflowDefinition } from '../../src/exporter/toWorkflowDefinition';
+import { fromWorkflowDefinition } from '../../src/exporter/fromWorkflowDefinition';
+
+describe('toWorkflowDefinition', () => {
+  it('round-trips a minimal command workflow byte-equivalent', () => {
+    const input = {
+      name: 'w',
+      description: 'd',
+      nodes: [{ id: 'a', command: 'classify' }],
+    };
+    const out = toWorkflowDefinition(fromWorkflowDefinition(input));
+    expect(out).toEqual(input);
+  });
+
+  it('preserves unknown workflow + node keys on round-trip', () => {
+    const input = {
+      name: 'w',
+      description: 'd',
+      future_workflow_knob: 'experimental',
+      nodes: [{ id: 'a', command: 'classify', __experimental_node_flag: true }],
+    };
+    const out = toWorkflowDefinition(fromWorkflowDefinition(input));
+    expect(out).toEqual(input);
+  });
+
+  it('preserves trigger_rule, depends_on, when, idle_timeout', () => {
+    const input = {
+      name: 'w',
+      description: 'd',
+      nodes: [
+        { id: 'a', command: 'classify' },
+        {
+          id: 'b',
+          command: 'act',
+          depends_on: ['a'],
+          when: "$a.output == 'ok'",
+          trigger_rule: 'all_success',
+          idle_timeout: 1000,
+        },
+      ],
+    };
+    const out = toWorkflowDefinition(fromWorkflowDefinition(input));
+    expect(out).toEqual(input);
+  });
+});
+```
+
+- [ ] **Step 2: Run tests — fail**
+
+Run: `bun --filter='@archon-studio/core' run test toWorkflowDefinition`
+
+- [ ] **Step 3: Implement the exporter**
+
+Create `packages/studio-core/src/exporter/toWorkflowDefinition.ts`:
+
+```ts
+import { getVariant } from '../nodes/registry';
+import type { LoadWorkflowInput } from '../store/builder-store';
+
+export function toWorkflowDefinition(input: LoadWorkflowInput): Record<string, unknown> {
+  const { meta, nodes } = input;
+
+  const out: Record<string, unknown> = {
+    name: meta.name,
+    description: meta.description,
+    ...meta.base,
+    ...meta.unknown,
+    nodes: nodes.map((n) => {
+      const variantPart = getVariant(n.variant).toDag(n.data);
+      return {
+        id: n.id,
+        ...n.base,
+        ...variantPart,
+        ...n.unknown,
+      };
+    }),
+  };
+  return out;
+}
+```
+
+- [ ] **Step 4: Run tests — pass**
+
+Run: `bun --filter='@archon-studio/core' run test toWorkflowDefinition`
+Expected: 3/3 pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/studio-core/src/exporter/toWorkflowDefinition.ts \
+        packages/studio-core/tests/exporter/toWorkflowDefinition.spec.ts
+git commit -m "feat(exporter): toWorkflowDefinition — store → raw with _unknown spread"
+```
+
+---
+
+### Task 30: Killer round-trip test upgrade — full pipeline
+
+**Files:**
+- Modify: `packages/studio-core/tests/round-trip.spec.ts`
+
+Upgrade from Phase 0's schema-parse-only body to the full pipeline. Every fixture is parsed → imported → exported → re-parsed → deep-equal asserted against the original parsed object.
+
+- [ ] **Step 1: Replace the test body**
+
+Replace the inner `it` body in `tests/round-trip.spec.ts` with:
+
+```ts
+for (const fixture of fixtures) {
+  it(`${fixture} round-trips byte-equivalent through importer + exporter`, async () => {
+    const yamlText = readFileSync(join(FIXTURE_DIR, fixture), 'utf8');
+    const yaml = await import('yaml');
+    const original = yaml.parse(yamlText);
+
+    // Step 1: schema validates the source
+    const validation = workflowDefinitionSchema.safeParse(original);
+    if (!validation.success) {
+      console.error(`Schema parse failed for ${fixture}:`);
+      console.error(JSON.stringify(validation.error.format(), null, 2));
+    }
+    expect(validation.success).toBe(true);
+
+    // Step 2: import → export
+    const { fromWorkflowDefinition } = await import('../src/exporter/fromWorkflowDefinition');
+    const { toWorkflowDefinition } = await import('../src/exporter/toWorkflowDefinition');
+    const reExported = toWorkflowDefinition(fromWorkflowDefinition(original));
+
+    // Step 3: schema validates the round-tripped object
+    const reValidation = workflowDefinitionSchema.safeParse(reExported);
+    expect(reValidation.success).toBe(true);
+
+    // Step 4: deep-equal — every byte preserved
+    expect(reExported).toEqual(original);
+  });
+}
+```
+
+- [ ] **Step 2: Run the full suite**
+
+Run: `bun --filter='@archon-studio/core' run test`
+Expected: every fixture passes the four assertions.
+
+If any fixture fails the **deep-equal** step:
+- Diff `original` vs `reExported` (Bun's test framework prints a diff). The diff tells you which key was added/dropped/reshaped.
+- Common causes:
+  - A schema-recognised field accidentally listed as both `base` and `variantSpecific` (key duplication).
+  - A nested object inside a known key (e.g. `output_format`) lost a foreign sub-key — see §6.3 deep-merge contract; if a per-variant `fromDag/toDag` round-trips a known key by extracting then rebuilding it, foreign sub-keys are dropped. Fix: round-trip the whole known-object verbatim and let inspectors patch via deep-merge later.
+  - Order of keys differs but content is identical — `expect().toEqual()` is order-insensitive for objects, so this should not fail; if it does, you're comparing arrays whose elements are structurally identical but ordered differently. Check `depends_on`.
+
+If any fixture fails the **schema parse** step on the *original*: a schema-mirror gap. Fix the mirror; drift CI confirms intentional.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/studio-core/tests/round-trip.spec.ts
+git commit -m "test(round-trip): full importer→exporter byte-equivalent assertion"
+```
+
+---
+
+### Task 31: Phase 1 verification + push + tag
+
+**Files:** none (verification only)
+
+- [ ] **Step 1: Full local CI sweep**
+
+Run, in order, each must pass:
+
+```bash
+bun install --frozen-lockfile
+bun run format:check
+bun run lint
+bun run check-schema-drift
+bun --filter='*' run build
+bun --filter='*' run test
+```
+
+If any step fails, fix root cause; do not paper over.
+
+- [ ] **Step 2: Push to origin/main**
+
+```bash
+git push origin main
+```
+
+Verify the `CI` and `round-trip` workflows go green on GitHub Actions before tagging.
+
+- [ ] **Step 3: Tag**
+
+```bash
+git tag -a phase-1 -m "Phase 1: data spine complete; importer+exporter round-trip every Archon bundled default + smoke fixture byte-equivalent"
+git push origin phase-1
+```
+
+- [ ] **Step 4: Update Phase 1 deliverables checklist below**
+
+---
+
+## Phase 1 deliverables checklist
+
+- [ ] Every Archon bundled default + `e2e-pi-all-nodes-smoke.yaml` vendored at the pinned SHA (Task 16)
+- [ ] `detectVariant` pure function (Task 17)
+- [ ] `pickBaseFields` + `BASE_FIELD_KEYS` + `VARIANT_SPECIFIC_KEYS` (Task 18)
+- [ ] `VariantDefinition<TData>` contract + statically-imported default registry (Tasks 19 + 26)
+- [ ] All 7 per-variant data modules with `fromDag`/`toDag`/`createDefault`/capabilities/library (Tasks 20–26)
+- [ ] Zustand store with workflow-JSON-as-truth + cascading rename (Task 27)
+- [ ] `fromWorkflowDefinition` importer (Task 28)
+- [ ] `toWorkflowDefinition` exporter (Task 29)
+- [ ] Killer round-trip test upgraded; passes for every fixture (Task 30)
+- [ ] All local + remote CI green; `phase-1` tag pushed (Task 31)
