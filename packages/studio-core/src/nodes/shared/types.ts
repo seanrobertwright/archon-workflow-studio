@@ -38,6 +38,11 @@ export interface BuilderNode<TData = unknown> {
   /** Variant-specific data shape (see per-variant data.ts). */
   data: TData;
   /**
+   * Typed base fields (depends_on, when, trigger_rule, idle_timeout, retry, hooks, etc.).
+   * Carries all recognised non-variant-specific fields on the node envelope.
+   */
+  base: Record<string, unknown>;
+  /**
    * Top-level DagNode keys our schema doesn't recognise. Spread back on export.
    * Empty object when the source was fully recognised.
    */
