@@ -54,3 +54,4 @@ htmlcov/
 # --- Local Claude / agent state ---
 .claude/local/
 .claude/settings.local.json
+.superpowers/
