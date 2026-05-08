@@ -13,20 +13,30 @@ describe('round-trip: every Archon bundled default', () => {
   });
 
   for (const fixture of fixtures) {
-    it(`${fixture} parses against our mirrored schema`, async () => {
+    it(`${fixture} round-trips byte-equivalent through importer + exporter`, async () => {
       const yamlText = readFileSync(join(FIXTURE_DIR, fixture), 'utf8');
-
-      // Phase 0 doesn't have an importer/exporter yet — just verify the YAML
-      // parses to JSON and the JSON satisfies workflowDefinitionSchema.
-      // Phase 1 replaces this body with: parse → import → export → diff.
       const yaml = await import('yaml');
-      const json = yaml.parse(yamlText);
-      const result = workflowDefinitionSchema.safeParse(json);
-      if (!result.success) {
+      const original = yaml.parse(yamlText);
+
+      // Step 1: schema validates the source
+      const validation = workflowDefinitionSchema.safeParse(original);
+      if (!validation.success) {
         console.error(`Schema parse failed for ${fixture}:`);
-        console.error(JSON.stringify(result.error.format(), null, 2));
+        console.error(JSON.stringify(validation.error.format(), null, 2));
       }
-      expect(result.success).toBe(true);
+      expect(validation.success).toBe(true);
+
+      // Step 2: import → export
+      const { fromWorkflowDefinition } = await import('../src/exporter/fromWorkflowDefinition');
+      const { toWorkflowDefinition } = await import('../src/exporter/toWorkflowDefinition');
+      const reExported = toWorkflowDefinition(fromWorkflowDefinition(original));
+
+      // Step 3: schema validates the round-tripped object
+      const reValidation = workflowDefinitionSchema.safeParse(reExported);
+      expect(reValidation.success).toBe(true);
+
+      // Step 4: deep-equal — every byte preserved
+      expect(reExported).toEqual(original);
     });
   }
 });
