@@ -78,7 +78,7 @@ These three decisions shaped the rest of the design and are recorded here as the
 
 ### 4.1 Repo layout
 
-Bun workspaces monorepo, mirroring Archon's structure so the upstream PR is essentially `cp -r packages/studio-core/src/* archon/packages/web/src/components/workflow-studio/` plus removing the old builder.
+Bun workspaces monorepo, mirroring Archon's structure so the upstream PR is essentially `cp -r packages/studio-core/src/* archon/packages/web/src/components/workflow-studio/` plus removing the old builder. **Tooling pins match Archon at the SHA in `.archon-source-pin`**: Bun `^1.3.0`, TypeScript `^5.3.0`, React `^19.0.0`, Vite `^6.0.0`, `@xyflow/react ^12.10.1`, `@dagrejs/dagre ^2.0.4`, Tailwind `^4.0.0` + `@tailwindcss/vite`, `@tanstack/react-query ^5.0.0`, `zustand ^5.0.12`, Zod `^3.25.28`. Each package has its own `tsconfig.json` (Archon does not use a shared base config — we match).
 
 ```
 archon-workflow-studio/
@@ -238,7 +238,7 @@ Output is always the canonical Archon string. AND-groups-as-boxes structurally e
 
 ### 7.2 Live YAML preview
 
-Right-side drawer that toggles in over the inspector. Read-only in v1. Generated from `store.workflow` via the exporter and the `yaml` npm package (browser-side). Syntax-highlighted with Shiki. We build a line→node map during YAML generation; hovering a `- id: classify` line highlights and centers the corresponding node on the canvas. Click selects.
+Right-side drawer that toggles in over the inspector. Read-only in v1. Generated from `store.workflow` via the exporter and the `yaml` npm package (browser-side). Syntax-highlighted with `highlight.js` + `rehype-highlight` to match Archon's existing rendering stack (Archon already uses these for markdown / code in `react-markdown`). We build a line→node map during YAML generation; hovering a `- id: classify` line highlights and centers the corresponding node on the canvas. Click selects.
 
 The preview is **display-only**, not the canonical disk format. Archon's server is the canonical YAML producer (via `Bun.YAML.stringify` in the PUT handler). The studio's preview YAML may differ from the on-disk YAML in non-semantic ways (key ordering, quoting style, blank-line normalisation). **Round-trip equivalence is asserted on Archon's *server-written* YAML, not on our client preview** — see §12.5. The preview is honest: a small "preview formatting may differ from on-disk" note is shown beside the YAML drawer header. Bidirectional editing deferred to v1.5.
 
@@ -312,12 +312,14 @@ All studio styles read from `--studio-*` CSS variables. Four presets:
 
 ## 12. Testing strategy
 
+Archon uses **Bun's built-in test runner (`bun test`)** for all of its packages, not Vitest. To stay drop-in-compatible we use the same: `bun test` for `studio-core`, `studio-api-archon`, and `studio-fixtures`. The test API (`describe`, `it`, `expect`) is the same shape as Vitest, so test files port cleanly either direction. Playwright is the exception — it lives in `apps/standalone/` only, because Archon doesn't ship E2E tests and our standalone shell needs browser coverage.
+
 Five layers:
 
-1. **Unit (Vitest).** Variant `fromDag`/`toDag`, schemas, cascading rename, when-builder grammar parser, cycle detection, exporter purity, importer's `detectVariant`.
-2. **Component (Vitest + Testing Library).** Inspector renders correct fields per variant; switching variant migrates data correctly; ValidationPanel updates on edits.
-3. **Integration (Vitest + msw).** Mock `/api/*`; walk the connected-mode flow.
-4. **E2E (Playwright).** Standalone shell: connect → pick codebase → open workflow → edit → save → reload → asserts byte-equivalent. One smoke test per variant.
+1. **Unit (`bun test`).** Variant `fromDag`/`toDag`, schemas, cascading rename, when-builder grammar parser, cycle detection, exporter purity, importer's `detectVariant`.
+2. **Component (`bun test` + `@testing-library/react`).** Inspector renders correct fields per variant; switching variant migrates data correctly; ValidationPanel updates on edits. (`bun test` runs `.tsx` directly via Bun's transpiler — no JSDOM setup needed; happy-dom is pluggable.)
+3. **Integration (`bun test` + `msw`).** Mock `/api/*`; walk the connected-mode flow.
+4. **E2E (Playwright, in `apps/standalone/` only).** Standalone shell: connect → pick codebase → open workflow → edit → save → reload → asserts byte-equivalent. One smoke test per variant.
 5. **★ Round-trip CI (the killer test).** On every CI run, fetch every YAML in Archon's `.archon/workflows/defaults/` and `test-workflows/e2e-pi-all-nodes-smoke.yaml` at `.archon-source-pin`'s SHA. For each: parse → import → export → diff against source. Pass = trustworthy. Fail = our schema mirror drifted or exporter regressed. Until this passes for all bundled defaults *and* the all-nodes smoke test, the studio is not shippable.
 
 ## 13. Day-one scaffold (phase-0 deliverables)
