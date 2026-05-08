@@ -1,2 +1,22 @@
-// Phase 1 fills in: VariantDefinition, Renderer, Inspector, fromDag, toDag.
-export const variantId = 'approval' as const;
+import { approvalNodeSchema } from '../../schemas/dag-node';
+import type { VariantDefinition } from '../shared/types';
+import {
+  type ApprovalNodeData,
+  createApprovalDefault,
+  approvalCapabilities,
+  approvalLibrary,
+} from './data';
+import { approvalFromDag } from './fromDag';
+import { approvalToDag } from './toDag';
+
+export type { ApprovalNodeData };
+
+export const approvalVariant: VariantDefinition<ApprovalNodeData> = {
+  id: 'approval',
+  capabilities: approvalCapabilities,
+  library: approvalLibrary,
+  schema: approvalNodeSchema,
+  createDefault: createApprovalDefault,
+  fromDag: approvalFromDag,
+  toDag: approvalToDag,
+};
