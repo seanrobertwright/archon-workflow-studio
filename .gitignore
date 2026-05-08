@@ -55,3 +55,18 @@ htmlcov/
 .claude/local/
 .claude/settings.local.json
 .superpowers/
+
+# --- Bun ---
+.bun/
+
+# --- App build outputs ---
+apps/*/dist/
+packages/*/dist/
+
+# --- Test artifacts ---
+playwright-report/
+test-results/
+coverage/
+
+# --- Vendored fixtures (regeneratable) ---
+# packages/studio-fixtures/src/round-trip-fixtures is COMMITTED — pinned to .archon-source-pin
