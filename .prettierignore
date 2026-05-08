@@ -1,0 +1,11 @@
+# Plan, spec, and research prose — formatted manually, not by tooling.
+docs/
+.research/
+.claude/
+.superpowers/
+
+# Generated / vendored.
+bun.lock
+**/dist/
+**/node_modules/
+packages/studio-fixtures/src/round-trip-fixtures/
