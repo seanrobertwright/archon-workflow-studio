@@ -1,0 +1,23 @@
+name: round-trip
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  round-trip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.0
+      - run: bun install --frozen-lockfile
+      - name: Re-fetch fixtures from pinned SHA
+        run: bun run fetch-fixtures
+      - name: Verify fixtures match committed (catches stale vendoring)
+        run: git diff --exit-code packages/studio-fixtures/src/round-trip-fixtures
+      - name: Run round-trip suite
+        # Bun's test filter is positional (no `--` separator). This runs only
+        # tests in files matching "round-trip" within studio-core.
+        run: bun test --filter='@archon-studio/core' round-trip
