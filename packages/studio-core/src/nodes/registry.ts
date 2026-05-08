@@ -22,7 +22,8 @@ export type VariantRegistry = {
  * consumer code reads via `getVariant` (in `default-registry.ts`).
  */
 export function buildRegistry(entries: {
-  [K in VariantId]: VariantDefinition<unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in VariantId]: VariantDefinition<any>;
 }): VariantRegistry {
   for (const id of VARIANT_IDS) {
     if (!entries[id]) throw new Error(`Variant registry missing: ${id}`);

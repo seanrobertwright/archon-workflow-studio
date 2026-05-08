@@ -1,13 +1,9 @@
 import { describe, it, expect } from 'bun:test';
 import { VARIANT_IDS } from '../../src/nodes/registry';
 
-// Imports re-enabled in Task 26 along with default-registry.ts.
-// import { defaultRegistry, getVariant } from '../../src/nodes/default-registry';
-const defaultRegistry = {} as Record<string, never>;
-const getVariant = (_id: string) => ({}) as never;
+import { defaultRegistry, getVariant } from '../../src/nodes/default-registry';
 
-describe.skip('default variant registry', () => {
-  // Un-skipped in Task 26 once all 7 per-variant modules ship.
+describe('default variant registry', () => {
   it('contains all 7 variant ids', () => {
     for (const id of VARIANT_IDS) {
       expect(defaultRegistry[id]).toBeDefined();
