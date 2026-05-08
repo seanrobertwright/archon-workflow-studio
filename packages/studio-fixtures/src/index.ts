@@ -13,6 +13,26 @@ export function loadSnippet(category: 'starters' | 'patterns', name: string): st
 }
 
 export const ROUND_TRIP_FIXTURE_NAMES: readonly string[] = [
-  // Filled in by scripts/round-trip-fixtures.ts (Task 13). Phase 0 ships ONE.
+  // Filled in by scripts/round-trip-fixtures.ts (Task 16). Phase 1 expands to all 21 bundled defaults + smoke.
+  '_smoke-pi-all-nodes',
+  'archon-adversarial-dev',
+  'archon-architect',
+  'archon-assist',
+  'archon-comprehensive-pr-review',
+  'archon-create-issue',
   'archon-feature-development',
+  'archon-fix-github-issue',
+  'archon-idea-to-pr',
+  'archon-interactive-prd',
+  'archon-issue-review-full',
+  'archon-piv-loop',
+  'archon-plan-to-pr',
+  'archon-ralph-dag',
+  'archon-refactor-safely',
+  'archon-remotion-generate',
+  'archon-resolve-conflicts',
+  'archon-smart-pr-review',
+  'archon-test-loop-dag',
+  'archon-validate-pr',
+  'archon-workflow-builder',
 ];
