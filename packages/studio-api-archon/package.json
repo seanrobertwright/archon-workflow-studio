@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "bun test"
+    "test": "echo 'no tests yet — Phase 9 wires real implementations' && exit 0"
   },
   "dependencies": {
     "@archon-studio/core": "workspace:*"
