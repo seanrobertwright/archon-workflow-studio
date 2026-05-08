@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check-schema-drift": "bun run scripts/check-schema-drift.ts",
+    "fetch-fixtures": "bun run scripts/round-trip-fixtures.ts",
     "probe-archon": "bun run scripts/probe-archon-endpoints.ts",
     "prepare": "husky"
   },
