@@ -17,6 +17,16 @@
         "typescript-eslint": "^8.48.0",
       },
     },
+    "packages/studio-api-archon": {
+      "name": "@archon-studio/api-archon",
+      "version": "0.0.0",
+      "dependencies": {
+        "@archon-studio/core": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "^5.3.0",
+      },
+    },
     "packages/studio-core": {
       "name": "@archon-studio/core",
       "version": "0.0.0",
@@ -44,6 +54,8 @@
     },
   },
   "packages": {
+    "@archon-studio/api-archon": ["@archon-studio/api-archon@workspace:packages/studio-api-archon"],
+
     "@archon-studio/core": ["@archon-studio/core@workspace:packages/studio-core"],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.0", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.28.5", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw=="],
