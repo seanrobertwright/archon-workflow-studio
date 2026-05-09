@@ -5494,7 +5494,14 @@ test -f packages/studio-core/tests/setup.ts && echo OK
 ```
 Expected: `bunfig.toml` declares `preload = ["./tests/setup.ts"]`, and the file exists with the CSS-module stub + ResizeObserver shim. Phase 3 specs depend on this preload; do not duplicate it per spec file.
 
-If any check fails, **stop and reconcile** the discrepancy with the user before continuing — Task 42 will hit a wall otherwise.
+- [ ] **Step 7: Baseline typecheck — must be green before any Phase-3 edit**
+
+```bash
+bun --filter='@archon-studio/core' run typecheck
+```
+Expected: zero errors. Phase-3 tasks will rely on the existing public-API surface (`WorkflowApiClient`, `BuilderNode`, per-variant `*NodeData`, `usePositionPersistence`'s return shape) — if any of these have drifted from what the chunk assumes, fix the assumption before writing code, not after a TDD red phase. Re-run this command between tasks any time a public type changes.
+
+If any check above fails, **stop and reconcile** the discrepancy with the user before continuing — Task 42 will hit a wall otherwise.
 
 ---
 
@@ -6434,13 +6441,7 @@ import { useBuilderStore } from '../store/builder-store';
 import { VariantTile } from './library/VariantTile';
 import styles from './NodeLibrary.module.css';
 
-export interface NodeLibraryProps {
-  /** Working directory — forwarded to the Commands section query. Required. */
-  cwd: string;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function NodeLibrary({ cwd }: NodeLibraryProps) {
+export function NodeLibrary() {
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   return (
     <aside aria-label="Node library" className={styles.library}>
@@ -6458,7 +6459,7 @@ export function NodeLibrary({ cwd }: NodeLibraryProps) {
           ))}
         </ul>
       </section>
-      {/* Commands section — Task 48 will pass cwd here */}
+      {/* Commands section — Task 48 introduces a `cwd` prop and renders <CommandsSection cwd={cwd} /> */}
       {/* Snippets section — Task 51 */}
     </aside>
   );
@@ -6822,7 +6823,7 @@ Update Phase 2's `Canvas.spec.tsx` (created in Task 36) to:
 - Drop the `positions` prop from every `<Canvas positions={…} />` call.
 - Stub shape `{ positions: Map, setPosition, setMany, reset }` — same as the SnippetsSection spec stub from Task 51.
 
-Update Phase 2's `WorkflowBuilder.tsx` to render `<Canvas />` (no prop) and `<NodeLibrary cwd={cwd} />`.
+Update Phase 2's `WorkflowBuilder.tsx` to render `<Canvas />` (no prop) and `<NodeLibrary />` (still propless at Task 47 time — Task 48 introduces the `cwd` prop alongside its CommandsSection consumer).
 
 - [ ] **Step 8: Add a drag-encode test in `NodeLibrary.spec.tsx`**
 
@@ -7039,15 +7040,25 @@ const rowStyle: React.CSSProperties = {
 };
 ```
 
-- [ ] **Step 4: Wire `cwd` through `WorkflowBuilder` → `NodeLibrary` → `CommandsSection`**
+- [ ] **Step 4: Introduce `cwd` plumbing — `WorkflowBuilder` → `NodeLibrary` → `CommandsSection`**
 
-Modify `packages/studio-core/src/components/NodeLibrary.tsx`:
-1. Add a `cwd: string` prop to a new `NodeLibraryProps` interface; destructure in the function signature.
-2. Replace the `{/* Commands section — Task 48 */}` comment with `<CommandsSection cwd={cwd} />` and add the import.
+This is the first task that needs `cwd` in the library tree, so it's also the first task that adds the prop. Task 46 ships `NodeLibrary` propless; Task 48 introduces the prop alongside its consumer.
 
-Modify `packages/studio-core/src/components/WorkflowBuilder.tsx`. The shell already destructures `cwd` from its props (Phase 2 Task 37). Change `<NodeLibrary />` to `<NodeLibrary cwd={cwd} />`.
+1. Modify `packages/studio-core/src/components/NodeLibrary.tsx`:
+   - Add a `NodeLibraryProps` interface with `cwd: string`.
+   - Update the signature to `export function NodeLibrary({ cwd }: NodeLibraryProps)`.
+   - Replace the `{/* Commands section — Task 48 introduces a \`cwd\` prop ... */}` comment with `<CommandsSection cwd={cwd} />` and add the import.
 
-Update Task 46's `NodeLibrary.spec.tsx` calls — every `<NodeLibrary />` becomes `<NodeLibrary cwd="/abs/path/test-cwd" />`. The Variants-only tests don't depend on cwd, so any string suffices.
+2. Modify `packages/studio-core/src/components/WorkflowBuilder.tsx`. The shell already destructures `cwd` from its props (Phase 2 Task 37). Change `<NodeLibrary />` to `<NodeLibrary cwd={cwd} />`.
+
+3. Update Task 46's existing `NodeLibrary.spec.tsx` render calls — every `<NodeLibrary />` becomes `<NodeLibrary cwd="/abs/path/test-cwd" />`. (Two test bodies in Task 46, plus the drag-encode test added in Task 47 Step 8 — three total render sites.) Variants-only tests don't depend on cwd, so any string suffices. Without this update, the spec stops compiling the moment `cwd: string` becomes required.
+
+4. Re-run the full library spec to confirm nothing regressed:
+
+```bash
+bun --filter='@archon-studio/core' test NodeLibrary
+```
+Expected: still passes (Task 46's tests now render with the new prop; CommandsSection isn't rendered by NodeLibrary's own spec — that's covered by `CommandsSection.spec.tsx`).
 
 - [ ] **Step 5: Add 2 stub command rows to `StubArchonApiClient` so smoke is non-empty**
 
@@ -7155,7 +7166,13 @@ function escapeRegExp(s: string): string {
  *  - rewrite `id` if mapped
  *  - rewrite each entry of `base.depends_on` if mapped
  *  - rewrite `$<oldId>` references in `base.when` (string identifier boundary; never partial)
+ *
  * Body refs in prompt/bash/script/loop.prompt/approval.message are Phase 4 work and not handled here.
+ *
+ * Caller contract: `idMap` MUST NOT contain chained mappings (e.g., both `a → a-2` AND `a-2 → x`).
+ * The when-string regex sweep iterates the map; chained entries can re-rewrite a freshly-introduced
+ * id. Phase-3 callers pick targets via `makeUniqueId`, which produces fresh suffixes that aren't
+ * themselves keys, so this is a precondition not a defect.
  */
 export function renameSubgraph(
   nodes: readonly BuilderNode[],
