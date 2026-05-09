@@ -1,5 +1,4 @@
 import { parse as parseYaml } from 'yaml';
-import { loadRoundTripFixture } from '@archon-studio/fixtures';
 import { workflowDefinitionSchema } from '@archon-studio/core';
 import type {
   WorkflowApiClient,
@@ -9,11 +8,24 @@ import type {
   WorkflowDefinition,
 } from '@archon-studio/core';
 
+export interface StubArchonApiClientOptions {
+  /**
+   * Caller-provided YAML loader. Decoupled from `@archon-studio/fixtures` so the Stub
+   * can be bundled in a browser context — fixtures uses `node:fs`/`node:url` at module
+   * top level which breaks Vite's resolution. Node callers can pass
+   * `loadRoundTripFixture` from `@archon-studio/fixtures`; browser callers can pass a
+   * function that resolves a Vite `?raw` import.
+   */
+  loadFixture: (name: string) => string;
+}
+
 /**
- * Phase-2 stub. Resolves `getWorkflow` from the bundled round-trip fixtures.
+ * Phase-2 stub. Resolves `getWorkflow` from a caller-provided fixture loader.
  * The real `ArchonApiClient` lands in Phase 9.
  */
 export class StubArchonApiClient implements WorkflowApiClient {
+  constructor(private readonly options: StubArchonApiClientOptions) {}
+
   async ping(): Promise<{ ok: true; serverVersion?: string }> {
     return { ok: true, serverVersion: 'stub' };
   }
@@ -32,7 +44,7 @@ export class StubArchonApiClient implements WorkflowApiClient {
     return [];
   }
   async getWorkflow(name: string, _cwd: string): Promise<WorkflowDefinition> {
-    const yamlText = loadRoundTripFixture(name);
+    const yamlText = this.options.loadFixture(name);
     const parsed: unknown = parseYaml(yamlText);
     const result = workflowDefinitionSchema.safeParse(parsed);
     if (!result.success) {

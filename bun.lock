@@ -47,7 +47,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@archon-studio/core": "workspace:*",
-        "@archon-studio/fixtures": "workspace:*",
         "yaml": "2.5.1",
       },
       "devDependencies": {
