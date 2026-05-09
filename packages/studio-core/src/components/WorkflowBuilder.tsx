@@ -8,6 +8,7 @@ import type { WorkflowApiClient } from '../api/WorkflowApiClient';
 import { useBuilderStore } from '../store/builder-store';
 import { usePositionPersistence } from '../hooks/usePositionPersistence';
 import { Canvas } from './Canvas';
+import { NodeLibrary } from './NodeLibrary';
 import { Toolbar } from './Toolbar';
 import { StudioErrorBoundary } from './StudioErrorBoundary';
 import styles from './WorkflowBuilder.module.css';
@@ -42,9 +43,9 @@ export function WorkflowBuilder({
               <div className={styles.toolbar}>
                 <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
               </div>
-              <aside className={styles.library} aria-label="Node library">
-                {/* Phase 3 fills in NodeLibrary */}
-              </aside>
+              <div className={styles.library}>
+                <NodeLibrary />
+              </div>
               <main className={styles.canvas}>
                 <ReactFlowProvider>
                   <Canvas positions={positions} />
