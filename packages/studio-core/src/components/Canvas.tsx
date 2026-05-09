@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   applyNodeChanges,
+  useReactFlow,
   type NodeChange,
   type Node as RFNode,
   type NodeProps,
@@ -13,9 +14,10 @@ import '@xyflow/react/dist/style.css';
 import { useBuilderStore } from '../store/builder-store';
 import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
 import { layoutWithDagre } from '../hooks/useDagre';
-import type { UsePositionPersistence } from '../hooks/usePositionPersistence';
+import { usePositionContext } from '../hooks/PositionContext';
 import { defaultRegistry } from '../nodes/default-registry';
 import { VARIANT_IDS } from '../nodes/registry';
+import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from './library/dragPayload';
 import {
   makeOnNodesChange,
   makeOnConnect,
@@ -23,16 +25,15 @@ import {
   makeOnNodesDelete,
 } from './canvas/canvasHandlers';
 
-export interface CanvasProps {
-  /** Position-persistence handle. WorkflowBuilder constructs the real one; tests pass a stub. */
-  positions: UsePositionPersistence;
-}
+export function Canvas() {
+  const positions = usePositionContext();
+  const reactFlow = useReactFlow();
 
-export function Canvas({ positions }: CanvasProps) {
   const storeNodes = useBuilderStore((s) => s.nodes);
   const connect = useBuilderStore((s) => s.connect);
   const disconnect = useBuilderStore((s) => s.disconnect);
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
+  const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -73,21 +74,26 @@ export function Canvas({ positions }: CanvasProps) {
     // node's position go through applyNodeChanges instead.
   }, [idsKey]);
 
-  // Seed dagre-computed positions for any node id NOT already in the map.
-  // setMany is debounced inside the persistence hook so this writes once.
-  // FRAGILITY (Phase 3+): when a node is added mid-session, dagre re-lays out
-  // every node assuming UNMAPPED ones sit at {0,0}. For Phase 2 (single load,
-  // no add) this is fine; Phase 3's NodeLibrary will need to feed dagre the
-  // currently-persisted positions as fixed anchors (or only lay out the new
-  // subgraph). Track this as a Phase-3 prerequisite.
+  // Seed positions for any node id NOT already in the map.
+  // Phase-3 hardening (Task 47): on first load (positions empty), run dagre on
+  // the whole graph. On a subsequent partial-miss (theoretically only when a
+  // caller adds without setting a position) seed at origin so we don't clobber
+  // existing persisted layouts. Library drag-drop sets the position itself
+  // before this effect runs, so it never enters the "missing" branch.
   useEffect(() => {
     const missing = derivedNodes.filter((n) => !positions.positions.has(n.id));
     if (missing.length === 0) return;
-    const laid = layoutWithDagre(derivedNodes, rfEdges);
-    const newEntries: [string, { x: number; y: number }][] = missing
-      .map((n) => [n.id, laid.get(n.id)] as const)
-      .filter((entry): entry is [string, { x: number; y: number }] => entry[1] !== undefined);
-    if (newEntries.length > 0) positions.setMany(newEntries);
+    if (positions.positions.size === 0) {
+      // First-load: full dagre over the whole graph.
+      const laid = layoutWithDagre(derivedNodes, rfEdges);
+      const newEntries: [string, { x: number; y: number }][] = derivedNodes
+        .map((n) => [n.id, laid.get(n.id)] as const)
+        .filter((entry): entry is [string, { x: number; y: number }] => entry[1] !== undefined);
+      if (newEntries.length > 0) positions.setMany(newEntries);
+    } else {
+      // Some positions already persisted; only seed missing ids at origin.
+      positions.setMany(missing.map((n) => [n.id, { x: 0, y: 0 }]));
+    }
   }, [idsKey]);
 
   // Persistence hook — drag-end only. Pure factory tested in canvasHandlers.spec.ts.
@@ -106,20 +112,45 @@ export function Canvas({ positions }: CanvasProps) {
   const onEdgesDelete = useMemo(() => makeOnEdgesDelete(disconnect), [disconnect]);
   const onNodesDelete = useMemo(() => makeOnNodesDelete(deleteNodes), [deleteNodes]);
 
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(LIBRARY_DRAG_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      const raw = e.dataTransfer.getData(LIBRARY_DRAG_MIME);
+      const payload = decodeLibraryDrag(raw);
+      if (!payload) return;
+      e.preventDefault();
+      const flowPos = reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      if (payload.kind === 'variant') {
+        const id = addNodeFromVariant(payload.variantId, { dataPatch: payload.prefill });
+        positions.setPosition(id, flowPos);
+      }
+      // payload.kind === 'snippet' handled in Task 51 (insertSnippet wiring).
+    },
+    [reactFlow, addNodeFromVariant, positions],
+  );
+
   return (
-    <ReactFlow
-      nodes={rfNodes}
-      edges={rfEdges}
-      nodeTypes={nodeTypes}
-      onNodesChange={onNodesChange}
-      onConnect={onConnect}
-      onEdgesDelete={onEdgesDelete}
-      onNodesDelete={onNodesDelete}
-      fitView
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background />
-      <Controls />
-    </ReactFlow>
+    <div onDrop={onDrop} onDragOver={onDragOver} style={{ width: '100%', height: '100%' }}>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onConnect={onConnect}
+        onEdgesDelete={onEdgesDelete}
+        onNodesDelete={onNodesDelete}
+        fitView
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background />
+        <Controls />
+      </ReactFlow>
+    </div>
   );
 }

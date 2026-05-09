@@ -2,6 +2,7 @@ import { VARIANT_IDS } from '../nodes/registry';
 import { defaultRegistry } from '../nodes/default-registry';
 import { useBuilderStore } from '../store/builder-store';
 import { VariantTile } from './library/VariantTile';
+import { LIBRARY_DRAG_MIME, encodeLibraryDrag } from './library/dragPayload';
 import styles from './NodeLibrary.module.css';
 
 export function NodeLibrary() {
@@ -17,6 +18,14 @@ export function NodeLibrary() {
                 id={id}
                 meta={defaultRegistry[id].library}
                 onActivate={() => addNodeFromVariant(id)}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(
+                    LIBRARY_DRAG_MIME,
+                    encodeLibraryDrag({ kind: 'variant', variantId: id }),
+                  );
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
               />
             </li>
           ))}

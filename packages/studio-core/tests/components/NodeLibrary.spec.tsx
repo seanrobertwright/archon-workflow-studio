@@ -4,6 +4,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { NodeLibrary } from '../../src/components/NodeLibrary';
 import { useBuilderStore } from '../../src/store/builder-store';
+import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from '../../src/components/library/dragPayload';
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -39,5 +40,27 @@ describe('NodeLibrary', () => {
     const nodes = useBuilderStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].variant).toBe('loop');
+  });
+
+  it('emits a variant drag payload via dataTransfer on tile drag', () => {
+    render(
+      <ReactFlowProvider>
+        <NodeLibrary />
+      </ReactFlowProvider>,
+    );
+    const tile = screen.getByLabelText('Add command node');
+    const data: Record<string, string> = {};
+    const dataTransfer = {
+      setData: (k: string, v: string) => {
+        data[k] = v;
+      },
+      getData: (k: string) => data[k] ?? '',
+      types: [] as string[],
+    };
+    fireEvent.dragStart(tile, { dataTransfer });
+    expect(decodeLibraryDrag(data[LIBRARY_DRAG_MIME])).toEqual({
+      kind: 'variant',
+      variantId: 'command',
+    });
   });
 });

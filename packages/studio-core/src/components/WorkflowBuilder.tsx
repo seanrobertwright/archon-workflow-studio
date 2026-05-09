@@ -7,6 +7,7 @@ import { ThemeProvider, type ThemePreset } from '../theme/ThemeProvider';
 import type { WorkflowApiClient } from '../api/WorkflowApiClient';
 import { useBuilderStore } from '../store/builder-store';
 import { usePositionPersistence } from '../hooks/usePositionPersistence';
+import { PositionProvider } from '../hooks/PositionContext';
 import { Canvas } from './Canvas';
 import { NodeLibrary } from './NodeLibrary';
 import { Toolbar } from './Toolbar';
@@ -39,22 +40,24 @@ export function WorkflowBuilder({
       <ApiClientProvider client={client}>
         <ThemeProvider preset={theme}>
           <StudioErrorBoundary>
-            <div className={styles.shell}>
-              <div className={styles.toolbar}>
-                <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
+            <PositionProvider value={positions}>
+              <div className={styles.shell}>
+                <div className={styles.toolbar}>
+                  <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
+                </div>
+                <div className={styles.library}>
+                  <NodeLibrary />
+                </div>
+                <main className={styles.canvas}>
+                  <ReactFlowProvider>
+                    <Canvas />
+                  </ReactFlowProvider>
+                </main>
+                <aside className={styles.inspector} aria-label="Node inspector">
+                  {/* Phase 4 fills in NodeInspector */}
+                </aside>
               </div>
-              <div className={styles.library}>
-                <NodeLibrary />
-              </div>
-              <main className={styles.canvas}>
-                <ReactFlowProvider>
-                  <Canvas positions={positions} />
-                </ReactFlowProvider>
-              </main>
-              <aside className={styles.inspector} aria-label="Node inspector">
-                {/* Phase 4 fills in NodeInspector */}
-              </aside>
-            </div>
+            </PositionProvider>
           </StudioErrorBoundary>
         </ThemeProvider>
       </ApiClientProvider>

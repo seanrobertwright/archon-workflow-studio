@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, cleanup } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Canvas } from '../../src/components/Canvas';
 import { useBuilderStore } from '../../src/store/builder-store';
+import { PositionProvider } from '../../src/hooks/PositionContext';
 import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
 
 beforeEach(() => {
@@ -59,9 +60,11 @@ describe('Canvas', () => {
     seedTwoNodes();
     const positions = stubPositionsHook();
     const { container } = render(
-      <ReactFlowProvider>
-        <Canvas positions={positions} />
-      </ReactFlowProvider>,
+      <PositionProvider value={positions}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </PositionProvider>,
     );
     // Each command node's NodeShell tags itself with data-variant="command".
     // React Flow renders each node twice (visible + hidden measurement); accept ≥2.
@@ -75,9 +78,11 @@ describe('Canvas', () => {
     seedTwoNodes();
     const positions = stubPositionsHook();
     render(
-      <ReactFlowProvider>
-        <Canvas positions={positions} />
-      </ReactFlowProvider>,
+      <PositionProvider value={positions}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </PositionProvider>,
     );
     const setManyCall = positions._calls.find((c) => c[0] === 'setMany');
     expect(setManyCall).toBeDefined();
@@ -90,9 +95,11 @@ describe('Canvas', () => {
     const positions = stubPositionsHook();
     positions.positions.set('a', { x: 999, y: 999 });
     render(
-      <ReactFlowProvider>
-        <Canvas positions={positions} />
-      </ReactFlowProvider>,
+      <PositionProvider value={positions}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </PositionProvider>,
     );
     const setManyCall = positions._calls.find((c) => c[0] === 'setMany');
     if (setManyCall) {
