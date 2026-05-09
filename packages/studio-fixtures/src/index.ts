@@ -1,15 +1,21 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { SNIPPET_DATA } from './snippet-data.generated';
 
-const dirname = fileURLToPath(new URL('.', import.meta.url));
-
-export function loadRoundTripFixture(name: string): string {
-  return readFileSync(join(dirname, 'round-trip-fixtures', `${name}.yaml`), 'utf8');
-}
-
+/**
+ * Snippets are read from an inlined map (browser-safe). Source YAML lives
+ * under `snippets/{starters,patterns}/*.yaml`; regenerate the map via
+ * `bun run build-snippet-data` after editing.
+ *
+ * Round-trip fixtures (`round-trip-fixtures/*.yaml`) are loaded directly via
+ * `import.meta.dir` + `readFileSync` inside the round-trip test (Bun runtime
+ * only). Keeping that path out of this index leaves the package browser-safe.
+ */
 export function loadSnippet(category: 'starters' | 'patterns', name: string): string {
-  return readFileSync(join(dirname, 'snippets', category, `${name}.yaml`), 'utf8');
+  const bucket = SNIPPET_DATA[category] as Record<string, string>;
+  const yaml = bucket[name];
+  if (yaml === undefined) {
+    throw new Error(`loadSnippet: unknown snippet '${category}/${name}'`);
+  }
+  return yaml;
 }
 
 export const ROUND_TRIP_FIXTURE_NAMES: readonly string[] = [

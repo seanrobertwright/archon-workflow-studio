@@ -19,6 +19,7 @@
     "format:check": "prettier --check .",
     "check-schema-drift": "bun run scripts/check-schema-drift.ts",
     "fetch-fixtures": "bun run scripts/round-trip-fixtures.ts",
+    "build-snippet-data": "bun run scripts/build-snippet-data.ts",
     "probe-archon": "bun run scripts/probe-archon-endpoints.ts",
     "probe-yaml-equivalence": "bun run scripts/yaml-equivalence.ts",
     "prepare": "husky"

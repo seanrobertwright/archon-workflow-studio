@@ -10,11 +10,9 @@ import type {
 
 export interface StubArchonApiClientOptions {
   /**
-   * Caller-provided YAML loader. Decoupled from `@archon-studio/fixtures` so the Stub
-   * can be bundled in a browser context — fixtures uses `node:fs`/`node:url` at module
-   * top level which breaks Vite's resolution. Node callers can pass
-   * `loadRoundTripFixture` from `@archon-studio/fixtures`; browser callers can pass a
-   * function that resolves a Vite `?raw` import.
+   * Caller-provided YAML loader. Browser callers (standalone shell) pass a
+   * function that resolves a Vite `?raw` import; Node callers (tests) can
+   * read a fixture file directly via `import.meta.dir` + `readFileSync`.
    */
   loadFixture: (name: string) => string;
 }
