@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
+import { render, screen, cleanup } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { DagNodeComponent } from '../../src/components/DagNodeComponent';
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 const baseProps = {

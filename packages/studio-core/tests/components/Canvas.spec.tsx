@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { render, screen, cleanup } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Canvas } from '../../src/components/Canvas';
 import { useBuilderStore } from '../../src/store/builder-store';
@@ -8,6 +8,12 @@ import type { UsePositionPersistence } from '../../src/hooks/usePositionPersiste
 beforeEach(() => {
   useBuilderStore.getState().clearWorkflow();
   globalThis.localStorage?.clear();
+});
+
+// Bun:test runs all spec files sequentially in one process — without explicit
+// cleanup, rendered DOM bleeds into the next file's tests.
+afterEach(() => {
+  cleanup();
 });
 
 const stubPositionsHook = (): UsePositionPersistence & { _calls: unknown[][] } => {
@@ -57,8 +63,9 @@ describe('Canvas', () => {
         <Canvas positions={positions} />
       </ReactFlowProvider>,
     );
-    expect(screen.getByText('a')).toBeDefined();
-    expect(screen.getByText('b')).toBeDefined();
+    // React Flow renders each node twice (visible + hidden measurement). Accept ≥1.
+    expect(screen.getAllByText('a').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('b').length).toBeGreaterThan(0);
   });
 
   it('seeds dagre positions for nodes missing from the persistence map', () => {

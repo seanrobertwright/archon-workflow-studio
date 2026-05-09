@@ -43,7 +43,10 @@ describe('WorkflowBuilder', () => {
       />,
     );
     expect(screen.getByText('demo')).toBeDefined(); // toolbar shows name
-    expect(screen.getByText('only')).toBeDefined(); // canvas renders the node
+    // React Flow renders each node twice (visible + hidden measurement node), so
+    // accept ≥1 match. The point of this assertion is "the canvas mounted the node",
+    // not "there is exactly one DOM element with this text".
+    expect(screen.getAllByText('only').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Node library')).toBeDefined();
     expect(screen.getByLabelText('Node inspector')).toBeDefined();
   });
