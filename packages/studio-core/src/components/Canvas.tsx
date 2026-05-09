@@ -172,7 +172,7 @@ export function Canvas() {
         proOptions={{ hideAttribution: true }}
       >
         <Background />
-        <Controls />
+        <Controls position="top-left" />
       </ReactFlow>
     </div>
   );

@@ -7763,8 +7763,8 @@ Open `http://localhost:5173`. Verify, in this exact sequence:
 4. Drag the `classify` row from Commands → a `command` node lands with `data.command === 'classify'` and id `run-classify`.
 5. Click **classify-then-branch** under Snippets → three nodes (`classify`, `branch-yes`, `branch-no`) appear; edges are dashed-purple into `branch-yes` and `branch-no` (because they have `when:`); `classify` here is the snippet's id and may have been auto-renamed to `classify-2` if you'd already added a `classify` from step 2.
 6. Drag **fan-out-collect** to the canvas at a chosen anchor — five nodes appear centred on the drop point with proper edges; positions persist across reload.
-7. Reload the browser — entire graph including snippet inserts is in the same place.
-8. Reset Layout button — re-runs dagre, all positions overwritten, snippet inserts move to dagre-chosen positions; localStorage cleared per Task 34's reset semantics.
+7. Reload the browser — **expect** the standalone shell to re-load its hardcoded smoke fixture (`_smoke-pi-all-nodes`); the user-added nodes from steps 4–6 will be gone. **Phase 2 persists positions only**, not workflow definitions; full workflow save/load is Phase 9 (`saveWorkflow` / `loadWorkflow` against the real `ArchonApiClient`). What DOES persist across reload: any positions you dragged the smoke-fixture nodes to are remembered (localStorage), so the smoke fixture will reload at your last-arranged positions, not at fresh dagre coordinates.
+8. Reset Layout button — re-runs dagre, all positions overwritten, snippet inserts move to dagre-chosen positions; localStorage cleared per Task 34's reset semantics. Phase 3 hardening (Task 47/52 polish): the seed-on-add `useEffect` listens on `positions.positions` so Reset visibly re-fires the layout — clearing the persistence map alone is enough to trigger dagre on the whole graph.
 
 If anything is wrong, file a bug against the appropriate task and fix before tagging.
 

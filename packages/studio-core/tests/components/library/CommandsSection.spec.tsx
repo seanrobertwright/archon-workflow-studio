@@ -6,6 +6,7 @@ import { ApiClientProvider } from '../../../src/api/ApiClientProvider';
 import { CommandsSection } from '../../../src/components/library/CommandsSection';
 import { useBuilderStore } from '../../../src/store/builder-store';
 import type { WorkflowApiClient } from '../../../src/api/WorkflowApiClient';
+import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from '../../../src/components/library/dragPayload';
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -72,5 +73,31 @@ describe('CommandsSection', () => {
   it('renders an empty-state message when listCommands returns []', async () => {
     const { getByText } = renderWith(mkClient([]));
     await waitFor(() => expect(getByText(/no commands/i)).toBeDefined());
+  });
+
+  it('drag-from-row emits idHintOverride + prefill so the dropped node uses run-<name>', async () => {
+    const { getByText, getByLabelText } = renderWith(
+      mkClient([{ name: 'classify', source: 'project' }]),
+    );
+    await waitFor(() => expect(getByText('classify')).toBeDefined());
+
+    // Mock dataTransfer (happy-dom doesn't provide one for synthetic events).
+    const data: Record<string, string> = {};
+    const dataTransfer = {
+      setData: (k: string, v: string) => {
+        data[k] = v;
+      },
+      getData: (k: string) => data[k] ?? '',
+      types: [] as string[],
+    };
+    fireEvent.dragStart(getByLabelText('Add command running classify'), { dataTransfer });
+
+    const decoded = decodeLibraryDrag(data[LIBRARY_DRAG_MIME]);
+    expect(decoded).toEqual({
+      kind: 'variant',
+      variantId: 'command',
+      idHintOverride: 'run-classify',
+      prefill: { command: 'classify' },
+    });
   });
 });

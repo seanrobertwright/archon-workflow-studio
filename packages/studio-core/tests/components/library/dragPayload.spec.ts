@@ -21,6 +21,16 @@ describe('library drag payload', () => {
     expect(decodeLibraryDrag(encodeLibraryDrag(p))).toEqual(p);
   });
 
+  it('round-trips a command payload with prefill AND idHintOverride', () => {
+    const p: LibraryDragPayload = {
+      kind: 'variant',
+      variantId: 'command',
+      idHintOverride: 'run-classify',
+      prefill: { command: 'classify' },
+    };
+    expect(decodeLibraryDrag(encodeLibraryDrag(p))).toEqual(p);
+  });
+
   it('round-trips a snippet payload', () => {
     const p: LibraryDragPayload = {
       kind: 'snippet',
