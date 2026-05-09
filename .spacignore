@@ -1,0 +1,11 @@
+# spac (https://github.com/.../spac) — substring allowlist for vendored Archon fixtures.
+# Each non-comment line is a literal substring. Any finding snippet containing the
+# line is suppressed. Keep substrings narrow so real secrets aren't accidentally
+# whitelisted.
+
+# Vendored Archon smoke-fixture comment that mentions the env-var NAME (not a value).
+# File: packages/studio-fixtures/src/round-trip-fixtures/_smoke-pi-all-nodes.yaml
+# False-positive: matches keyword pattern `Auth: <high-entropy>` on the literal
+# variable name ANTHROPIC_API_KEY. The full phrase below is unique enough that
+# real secrets stored next to this label would not match it.
+Auth: ANTHROPIC_API_KEY (CI) or your local
