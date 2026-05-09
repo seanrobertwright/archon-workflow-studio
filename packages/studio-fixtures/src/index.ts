@@ -36,3 +36,18 @@ export const ROUND_TRIP_FIXTURE_NAMES: readonly string[] = [
   'archon-validate-pr',
   'archon-workflow-builder',
 ];
+
+export const SNIPPET_STARTERS = [
+  'archon-feature-development',
+  'archon-fix-github-issue',
+  'archon-test-loop-dag',
+] as const;
+
+export const SNIPPET_PATTERNS = [
+  'classify-then-branch',
+  'fan-out-collect',
+  'loop-until-signal',
+] as const;
+
+export type SnippetStarter = (typeof SNIPPET_STARTERS)[number];
+export type SnippetPattern = (typeof SNIPPET_PATTERNS)[number];
