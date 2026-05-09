@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { BuilderNode } from '../nodes/shared/types';
+import { defaultRegistry } from '../nodes/default-registry';
+import type { VariantId } from '../nodes/registry';
+import { makeUniqueId } from '../nodes/shared/makeUniqueId';
 
 export interface WorkflowMeta {
   name: string;
@@ -24,6 +27,10 @@ export interface BuilderState {
   setWorkflowDescription: (description: string) => void;
 
   addNode: (node: BuilderNode) => void;
+  addNodeFromVariant: (
+    variantId: VariantId,
+    options?: { idHintOverride?: string; dataPatch?: Record<string, unknown> },
+  ) => string;
   updateNode: (id: string, patch: Partial<BuilderNode>) => void;
   deleteNodes: (ids: string[]) => void;
 
@@ -50,6 +57,21 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
       }
       return { nodes: [...s.nodes, node] };
     }),
+
+  addNodeFromVariant: (variantId, options) => {
+    const def = defaultRegistry[variantId];
+    const hint = options?.idHintOverride ?? def.library.defaultIdHint;
+    const existingIds = new Set(get().nodes.map((n) => n.id));
+    const id = makeUniqueId(hint, existingIds);
+    const data = {
+      ...(def.createDefault() as Record<string, unknown>),
+      ...(options?.dataPatch ?? {}),
+    };
+    set((s) => ({
+      nodes: [...s.nodes, { id, variant: variantId, data, base: {}, unknown: {} }],
+    }));
+    return id;
+  },
 
   updateNode: (id, patch) =>
     set((s) => ({

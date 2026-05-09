@@ -77,6 +77,43 @@ describe('builder-store', () => {
     expect(() => useBuilderStore.getState().renameNode('a', 'b')).toThrow();
   });
 
+  describe('addNodeFromVariant', () => {
+    it('mints a node with a default id from the variant library hint', () => {
+      useBuilderStore.getState().loadWorkflow({
+        meta: { name: 'w', description: '', base: {}, unknown: {} },
+        nodes: [],
+      });
+      const id = useBuilderStore.getState().addNodeFromVariant('command');
+      expect(id).toBe('run-command'); // command/data.ts:defaultIdHint
+      expect(useBuilderStore.getState().nodes).toHaveLength(1);
+      expect(useBuilderStore.getState().nodes[0]!.variant).toBe('command');
+    });
+
+    it('disambiguates the id when the default collides', () => {
+      useBuilderStore.getState().loadWorkflow({
+        meta: { name: 'w', description: '', base: {}, unknown: {} },
+        nodes: [
+          { id: 'run-command', variant: 'command', data: { command: 'x' }, base: {}, unknown: {} },
+        ],
+      });
+      const id = useBuilderStore.getState().addNodeFromVariant('command');
+      expect(id).toBe('run-command-2');
+    });
+
+    it('respects idHintOverride and dataPatch (used by commands list)', () => {
+      useBuilderStore.getState().loadWorkflow({
+        meta: { name: 'w', description: '', base: {}, unknown: {} },
+        nodes: [],
+      });
+      const id = useBuilderStore.getState().addNodeFromVariant('command', {
+        idHintOverride: 'run-classify',
+        dataPatch: { command: 'classify' },
+      });
+      expect(id).toBe('run-classify');
+      expect(useBuilderStore.getState().nodes[0]!.data).toMatchObject({ command: 'classify' });
+    });
+  });
+
   it('deleteNodes removes target + clears references in others depends_on', () => {
     useBuilderStore.getState().loadWorkflow({
       meta: { name: 'w', description: 'd', base: {}, unknown: {} },
