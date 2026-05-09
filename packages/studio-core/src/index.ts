@@ -10,6 +10,7 @@ export type {
   ValidateResult,
 } from './api/WorkflowApiClient';
 export type { WorkflowDefinition, DagNode } from './schemas';
+export { workflowDefinitionSchema } from './schemas';
 export { VARIANT_IDS, type VariantId } from './nodes/registry';
 
 export { WorkflowBuilder, type WorkflowBuilderProps } from './components/WorkflowBuilder';

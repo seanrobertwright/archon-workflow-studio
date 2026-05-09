@@ -11,7 +11,9 @@
     "test": "echo 'no tests yet — Phase 9 wires real implementations' && exit 0"
   },
   "dependencies": {
-    "@archon-studio/core": "workspace:*"
+    "@archon-studio/core": "workspace:*",
+    "@archon-studio/fixtures": "workspace:*",
+    "yaml": "2.5.1"
   },
   "devDependencies": {
     "typescript": "^5.3.0"
