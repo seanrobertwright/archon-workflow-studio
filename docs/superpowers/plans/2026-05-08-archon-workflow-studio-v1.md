@@ -7790,15 +7790,15 @@ git push origin phase-3
 
 ## Phase 3 deliverables checklist
 
-- [ ] Phase-2 reality check passes (Canvas path, useReactFlow, layoutWithDagre arity, listCommands shape, nested variant TData, test preload) (Task 41.5)
-- [ ] `VariantDefinition.Renderer` slot filled; `deriveFlow` emits `type: variant` + pass-through `BuilderNode`; nodeTypes built from registry; DagNodeComponent retired (Task 42)
-- [ ] `NodeShell` shared visual primitive with optional badge / secondary slots (Task 43)
-- [ ] All 7 per-variant Renderers — distinct stripes, variant-appropriate badges and secondaries (Task 44)
-- [ ] `makeUniqueId` pure helper + `addNodeFromVariant` store action with `idHintOverride` / `dataPatch` (Task 45)
-- [ ] `NodeLibrary` shell + Variants section + click-to-add wired through `addNodeFromVariant` (Task 46)
-- [ ] `PositionProvider` + `usePositionContext` so Canvas and SnippetsSection share one persistence handle; Canvas refactored to consume the context, call `useReactFlow`, wrap with a drop target, and harden the seed-on-add effect; library drag payload codec + Canvas `onDrop` / `onDragOver` projecting screen → flow position (Task 47)
-- [ ] Commands section pulls from `WorkflowApiClient.listCommands(cwd)` via TanStack Query; consumes `{name, source}[]` rows; `cwd` prop-drilled WorkflowBuilder → NodeLibrary → CommandsSection; click-to-add and drag both prefill `data.command` (Task 48)
-- [ ] `renameSubgraph` (id + depends_on + when string refs) + `insertSnippet` (importer → rename → dagre → translate → seed positions) (Task 49)
-- [ ] 3 starter snippets (curated bundled defaults) + 3 pattern snippets (classify-then-branch, fan-out-collect, loop-until-signal) + fixture-validity test (Task 50)
-- [ ] Snippets section in `NodeLibrary` + Canvas `onDrop` snippet branch (Task 51)
-- [ ] Manual visual smoke + screenshot + push + `phase-3` tag (Task 52)
+- [x] Phase-2 reality check passes (Canvas path, useReactFlow, layoutWithDagre arity, listCommands shape, nested variant TData, test preload) (Task 41.5)
+- [x] `VariantDefinition.Renderer` slot filled; `deriveFlow` emits `type: variant` + pass-through `BuilderNode`; nodeTypes built from registry; DagNodeComponent retired (Task 42)
+- [x] `NodeShell` shared visual primitive with optional badge / secondary slots (Task 43)
+- [x] All 7 per-variant Renderers — distinct stripes, variant-appropriate badges and secondaries (Task 44)
+- [x] `makeUniqueId` pure helper + `addNodeFromVariant` store action with `idHintOverride` / `dataPatch` (Task 45)
+- [x] `NodeLibrary` shell + Variants section + click-to-add wired through `addNodeFromVariant` (Task 46)
+- [x] `PositionProvider` + `usePositionContext` so Canvas and SnippetsSection share one persistence handle; Canvas refactored to consume the context, call `useReactFlow`, wrap with a drop target, and harden the seed-on-add effect; library drag payload codec + Canvas `onDrop` / `onDragOver` projecting screen → flow position (Task 47)
+- [x] Commands section pulls from `WorkflowApiClient.listCommands(cwd)` via TanStack Query; consumes `{name, source}[]` rows; `cwd` prop-drilled WorkflowBuilder → NodeLibrary → CommandsSection; click-to-add and drag both prefill `data.command` (Task 48)
+- [x] `renameSubgraph` (id + depends_on + when string refs) + `insertSnippet` (importer → rename → dagre → translate → seed positions) (Task 49)
+- [x] 3 starter snippets (curated bundled defaults) + 3 pattern snippets (classify-then-branch, fan-out-collect, loop-until-signal) + fixture-validity test (Task 50)
+- [x] Snippets section in `NodeLibrary` + Canvas `onDrop` snippet branch (Task 51)
+- [ ] Manual visual smoke + screenshot + push + `phase-3` tag (Task 52) — automated checks green; manual smoke + screenshot + push pending user
