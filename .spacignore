@@ -5,7 +5,9 @@
 
 # Vendored Archon smoke-fixture comment that mentions the env-var NAME (not a value).
 # File: packages/studio-fixtures/src/round-trip-fixtures/_smoke-pi-all-nodes.yaml
-# False-positive: matches keyword pattern `Auth: <high-entropy>` on the literal
-# variable name ANTHROPIC_API_KEY. The full phrase below is unique enough that
-# real secrets stored next to this label would not match it.
-Auth: ANTHROPIC_API_KEY (CI) or your local
+# False-positive: spac's keyword pattern matches `Auth:` + high-entropy token,
+# capturing `Auth: ANTHROPIC_API_KEY` (the env-var NAME, not a value).
+# Whitelisting this exact match-snippet is safe — a REAL secret in the form
+# `ANTHROPIC_API_KEY=sk-ant-...` would still trip the high-confidence pattern
+# `\bsk-ant-...\b` independently of this allowlist entry.
+Auth: ANTHROPIC_API_KEY
