@@ -70,3 +70,4 @@ coverage/
 
 # --- Vendored fixtures (regeneratable) ---
 # packages/studio-fixtures/src/round-trip-fixtures is COMMITTED — pinned to .archon-source-pin
+.gstack/

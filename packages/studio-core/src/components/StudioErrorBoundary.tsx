@@ -12,7 +12,6 @@ export class StudioErrorBoundary extends Component<{ children: ReactNode }, Stat
   }
 
   componentDidCatch(error: Error) {
-     
     console.error('[StudioErrorBoundary]', error);
   }
 

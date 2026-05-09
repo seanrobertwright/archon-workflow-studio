@@ -36,7 +36,7 @@ export function layoutWithDagre(
   } catch (err) {
     // Cycle or other dagre failure — return identity positions; Canvas surfaces a warning.
     // (Phase 6's cycle detector is the authoritative gatekeeper; this is just a soft fallback.)
-     
+
     console.error('[useDagre] layout failed, using identity positions:', err);
     for (const n of nodes) result.set(n.id, { x: 0, y: 0 });
     return result;

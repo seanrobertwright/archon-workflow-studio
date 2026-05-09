@@ -38,7 +38,6 @@ export function App() {
       useBuilderStore.getState().loadWorkflow(input);
       setLoaded(true);
     })().catch((err) => {
-       
       console.error('[standalone] fixture load failed', err);
     });
     return () => {

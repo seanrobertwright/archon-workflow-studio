@@ -5444,6 +5444,60 @@ git push origin phase-2
 
 ---
 
+### Task 41.5: Phase-2 reality check (read-only verification)
+
+**Files:** none (verification only).
+
+Phase 3 makes structural assumptions about Phase 2 outputs (file paths, function arities, interface shapes, data nesting). Run these greps before Task 42 to fail fast if any assumption is wrong — adjust subsequent tasks accordingly rather than discovering the mismatch in a TDD red phase.
+
+- [ ] **Step 1: Verify Canvas file path**
+
+```bash
+test -f packages/studio-core/src/components/Canvas.tsx && echo OK
+```
+Expected: `OK`. If the file is at a different path (e.g., `components/canvas/Canvas.tsx`), update Tasks 42, 47, 51 to reference the actual path.
+
+- [ ] **Step 2: Verify `Canvas` component contract**
+
+```bash
+grep -nE "export (function|const) Canvas" packages/studio-core/src/components/Canvas.tsx
+grep -nE "useReactFlow|positions:" packages/studio-core/src/components/Canvas.tsx
+```
+Expected: a `Canvas` export. Phase 2's draft takes `{ positions }` as a prop and does NOT call `useReactFlow`; Task 47 refactors both. If Phase 2 already calls `useReactFlow` and uses context, simplify Task 47 Step 7 (the refactor parts are no-ops).
+
+- [ ] **Step 3: Verify `layoutWithDagre` signature**
+
+```bash
+grep -nE "export function layoutWithDagre" packages/studio-core/src/hooks/useDagre.ts
+```
+Expected: signature is `layoutWithDagre(nodes: MinimalRFNode[], edges: MinimalRFEdge[]): Map<string, {x:number;y:number}>`. Task 49's `insertSnippet` builds both args.
+
+- [ ] **Step 4: Verify `WorkflowApiClient.listCommands` signature**
+
+```bash
+grep -nE "listCommands" packages/studio-core/src/api/WorkflowApiClient.ts
+```
+Expected: `listCommands(cwd: string): Promise<{name: string; source: 'project' | 'global' | 'bundled'}[]>`. Task 48's CommandsSection consumes this shape.
+
+- [ ] **Step 5: Verify per-variant data shapes are nested under their discriminator key**
+
+```bash
+grep -nE "export interface (Loop|Approval|Script|Cancel)NodeData" packages/studio-core/src/nodes/*/data.ts
+```
+Expected: `LoopNodeData = { loop: ... }`, `ApprovalNodeData = { approval: ... }`. Per Phase 1's `_unknown`-preserving design, every variant's TData wraps its config under a key matching the discriminator. Task 44's per-variant Renderers traverse the wrapper (e.g., `node.data.loop?.max_iterations`, `node.data.approval?.message`).
+
+- [ ] **Step 6: Verify Phase-2 test setup preload exists**
+
+```bash
+test -f packages/studio-core/bunfig.toml && cat packages/studio-core/bunfig.toml
+test -f packages/studio-core/tests/setup.ts && echo OK
+```
+Expected: `bunfig.toml` declares `preload = ["./tests/setup.ts"]`, and the file exists with the CSS-module stub + ResizeObserver shim. Phase 3 specs depend on this preload; do not duplicate it per spec file.
+
+If any check fails, **stop and reconcile** the discrepancy with the user before continuing — Task 42 will hit a wall otherwise.
+
+---
+
 ### Task 42: Migrate `deriveFlow` + extend `VariantDefinition` with `Renderer`
 
 **Files:**
@@ -5453,7 +5507,7 @@ git push origin phase-2
 - Delete: `packages/studio-core/src/components/DagNodeComponent.tsx` (created in Task 35)
 - Delete: `packages/studio-core/src/components/DagNodeComponent.module.css`
 - Delete: `packages/studio-core/tests/components/DagNodeComponent.spec.tsx`
-- Modify: `packages/studio-core/src/components/canvas/Canvas.tsx` (created in Task 36) — `nodeTypes` built from registry instead of `{ dag: DagNodeComponent }`
+- Modify: `packages/studio-core/src/components/Canvas.tsx` (created in Task 36) — `nodeTypes` built from registry instead of `{ dag: DagNodeComponent }`
 
 The Phase-2 stopgap projects `data: { variant, storeId, label }` and registers a single `dag` nodeType. Phase 3 needs each variant to render with its own component, so we:
 
@@ -5466,7 +5520,19 @@ The Phase-2 deriveFlow tests asserted `n.type === 'dag'` and `data.variant === '
 
 - [ ] **Step 1: Update the failing tests first** (TDD red phase)
 
-Modify `packages/studio-core/tests/components/canvas/deriveFlow.spec.ts`. Replace the existing test bodies to assert the new shape:
+Phase 2's `deriveFlow.spec.ts` (Task 32) ships six `it()` blocks. **Two are rewritten by Phase 3** (the type / data-shape assertions); **four are copied forward verbatim** because they assert behavior that Phase 3 doesn't change.
+
+**Rewritten (replace bodies):**
+1. `it('emits one rfNode per store node, all with type "dag"')` → renamed to `it('emits one rfNode per store node, type === each node\'s variant id')`
+2. `it('passes variant id through on rfNode.data so DagNodeComponent can read it')` → renamed to `it('passes the full BuilderNode through on rfNode.data.node')`
+
+**Copied verbatim from Phase 2 Task 32:**
+3. `it('uses position map when present, defaults to {x:0,y:0} otherwise')`
+4. `it('emits one edge per depends_on entry with id "<source>-><target>"')`
+5. `it('marks edges as dashed-purple when the TARGET has a when: string')`
+6. `it('skips depends_on entries whose source is missing (defensive)')`
+
+The full updated spec file:
 
 ```ts
 import { describe, it, expect } from 'bun:test';
@@ -5483,9 +5549,10 @@ const node = (over: Partial<BuilderNode>): BuilderNode => ({
 });
 
 describe('deriveFlow', () => {
+  // 1. Rewritten: type === variant id (was 'dag').
   it('emits one rfNode per store node, type === each node\'s variant id', () => {
     const { rfNodes } = deriveFlow(
-      [node({ id: 'a', variant: 'command' }), node({ id: 'b', variant: 'loop' })],
+      [node({ id: 'a', variant: 'command' }), node({ id: 'b', variant: 'loop', data: { loop: {} } })],
       new Map(),
     );
     expect(rfNodes).toHaveLength(2);
@@ -5493,19 +5560,59 @@ describe('deriveFlow', () => {
     expect(rfNodes.find((n) => n.id === 'b')?.type).toBe('loop');
   });
 
+  // 2. Rewritten: full BuilderNode pass-through on rfNode.data.node.
   it('passes the full BuilderNode through on rfNode.data.node', () => {
-    const src = node({ id: 'a', variant: 'loop', data: { iteration_cap: 5 } });
+    const src = node({ id: 'a', variant: 'loop', data: { loop: { max_iterations: 5, prompt: 'p', until: 'COMPLETE' } } });
     const { rfNodes } = deriveFlow([src], new Map());
     expect(rfNodes[0].data.node).toBe(src); // identity, not deep-clone — pure projection
     expect(rfNodes[0].data.storeId).toBe('a');
   });
 
-  // Position-map test, edge-id test, when-aware-edge test, ghost-source test from Phase 2 are unchanged.
-  // Copy those four bodies forward verbatim from Task 32's spec.
+  // 3-6. Copied verbatim from Phase 2 Task 32 — bodies unchanged.
+  it('uses position map when present, defaults to {x:0,y:0} otherwise', () => {
+    const { rfNodes } = deriveFlow(
+      [node({ id: 'a' }), node({ id: 'b' })],
+      new Map([['a', { x: 100, y: 200 }]]),
+    );
+    expect(rfNodes.find((n) => n.id === 'a')?.position).toEqual({ x: 100, y: 200 });
+    expect(rfNodes.find((n) => n.id === 'b')?.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('emits one edge per depends_on entry with id "<source>-><target>"', () => {
+    const { rfEdges } = deriveFlow(
+      [
+        node({ id: 'a' }),
+        node({ id: 'b', base: { depends_on: ['a'] } }),
+        node({ id: 'c', base: { depends_on: ['a', 'b'] } }),
+      ],
+      new Map(),
+    );
+    expect(rfEdges.map((e) => e.id).sort()).toEqual(['a->b', 'a->c', 'b->c']);
+    expect(rfEdges.every((e) => e.type === 'smoothstep')).toBe(true);
+  });
+
+  it('marks edges as dashed-purple when the TARGET has a when: string', () => {
+    const { rfEdges } = deriveFlow(
+      [
+        node({ id: 'a' }),
+        node({ id: 'b', base: { depends_on: ['a'], when: "$a.output == 'go'" } }),
+      ],
+      new Map(),
+    );
+    const e = rfEdges.find((e) => e.id === 'a->b')!;
+    expect(e.style?.strokeDasharray).toBeDefined();
+    expect(e.style?.stroke).toBe('var(--studio-when)');
+  });
+
+  it('skips depends_on entries whose source is missing (defensive)', () => {
+    const { rfEdges } = deriveFlow(
+      [node({ id: 'b', base: { depends_on: ['ghost'] } })],
+      new Map(),
+    );
+    expect(rfEdges).toHaveLength(0);
+  });
 });
 ```
-
-Re-run the four unchanged Phase-2 tests verbatim alongside the two new ones.
 
 - [ ] **Step 2: Run, expect failure**
 
@@ -5636,7 +5743,7 @@ export const <variant>Variant: VariantDefinition<<Variant>NodeData> = {
 
 - [ ] **Step 6: Build `nodeTypes` from the registry in `Canvas`**
 
-Modify `packages/studio-core/src/components/canvas/Canvas.tsx`. Replace the Phase-2 nodeTypes import with a registry-derived one:
+Modify `packages/studio-core/src/components/Canvas.tsx`. Replace the Phase-2 nodeTypes import with a registry-derived one:
 
 ```tsx
 import { useMemo } from 'react';
@@ -5684,6 +5791,8 @@ git commit -m "feat(nodes): per-variant Renderer slot + deriveFlow pass-through;
 - Create: `packages/studio-core/src/nodes/shared/NodeShell.tsx`
 - Create: `packages/studio-core/src/nodes/shared/NodeShell.module.css`
 - Create: `packages/studio-core/tests/nodes/shared/NodeShell.spec.tsx`
+
+**Test runtime:** All Phase-3 component specs rely on the Phase-2 `tests/setup.ts` preload (configured by `bunfig.toml`'s `preload = ["./tests/setup.ts"]` from Phase 2 Task 35). That preload installs the CSS-module stub (`.module.css` imports return a property-name Proxy) and the `ResizeObserver` global. New `*.spec.tsx` files just need `GlobalRegistrator.register()` once per file — do **not** add a sibling setup file or reconfigure `bunfig.toml`.
 
 The seven per-variant Renderers share 80% of their visual structure: a 180×80 card with a 4-px left stripe in `var(--node-<variant>)`, top/bottom React Flow handles, label area, optional badge area in the corner, optional secondary text row. Extract that scaffolding into one component so per-variant Renderers stay short — they only describe *what's variant-specific* (badge content, secondary text, capability flags).
 
@@ -5787,7 +5896,7 @@ export function NodeShell({ variant, label, selected, badge, secondary }: NodeSh
           {badge !== undefined && <div className={styles.badge}>{badge}</div>}
         </div>
         {secondary !== undefined && <div className={styles.secondary}>{secondary}</div>}
-        {badge !== variant && <div className={styles.tag}>{variant}</div>}
+        {badge === undefined && <div className={styles.tag}>{variant}</div>}
       </div>
       <Handle type="target" position={Position.Top} />
       <Handle type="source" position={Position.Bottom} />
@@ -5901,8 +6010,8 @@ Each Renderer is a thin wrapper that pulls variant-specific accents out of `prop
 | `prompt` | `id` | — | first 32 chars of `data.prompt` | Stripe `--node-prompt` (blue) |
 | `bash` | `id` | — | first 32 chars of `data.bash` | Stripe `--node-bash` (slate) |
 | `script` | `id` | `data.script` (file ref) | — | Stripe `--node-script` (gray) |
-| `loop` | `id` | `cap N` if `data.iteration_cap` set; else `loop` | "interactive" if `data.interactive` | Stripe `--node-loop` (purple) |
-| `approval` | `id` | "approval" | first 32 chars of `data.gate_message` if set | Stripe `--node-approval` (orange) |
+| `loop` | `id` | `cap N` if `data.loop?.max_iterations` set; else `loop` | "interactive" if `data.loop?.interactive` | Stripe `--node-loop` (purple). Phase 1 nests loop config under `data.loop` (see `nodes/loop/data.ts:LoopNodeData`). |
+| `approval` | `id` | "approval" | first 32 chars of `data.approval?.message` if set | Stripe `--node-approval` (orange). Phase 1 nests approval config under `data.approval` (see `nodes/approval/data.ts:ApprovalNodeData`). |
 | `cancel` | `id` | "cancel" | — | Stripe `--node-cancel` (red) |
 
 The label fallback to `id` is the universal default. Variants that have a meaningful identifier in their data (`command.command`, future-thoughts etc.) prefer that. For prompt/bash/script/approval the body content goes in the *secondary* slot, never as the label, because the id is what's referenced from `depends_on`/`when:`/etc. and identification by id is the priority.
@@ -5987,17 +6096,21 @@ return <NodeShell variant="prompt" label={node.id} selected={!!selected} seconda
 const secondary = node.data.bash ? node.data.bash.slice(0, 32) : undefined;
 return <NodeShell variant="bash" label={node.id} selected={!!selected} secondary={secondary} />;
 
-// script/Renderer.tsx
-return <NodeShell variant="script" label={node.id} selected={!!selected} badge={node.data.script || undefined} />;
+// script/Renderer.tsx — script bodies can be 100+ chars; truncate so the pill stays small
+const script = typeof node.data.script === 'string' ? node.data.script : '';
+const badge = script ? script.slice(0, 24) : undefined;
+return <NodeShell variant="script" label={node.id} selected={!!selected} badge={badge} />;
 
-// loop/Renderer.tsx
-const cap = node.data.iteration_cap;
+// loop/Renderer.tsx — note nested data.loop.* shape
+const cfg = node.data.loop ?? {};
+const cap = cfg.max_iterations;
 const badge = typeof cap === 'number' ? `cap ${cap}` : 'loop';
-const secondary = node.data.interactive ? 'interactive' : undefined;
+const secondary = cfg.interactive ? 'interactive' : undefined;
 return <NodeShell variant="loop" label={node.id} selected={!!selected} badge={badge} secondary={secondary} />;
 
-// approval/Renderer.tsx
-const secondary = node.data.gate_message ? node.data.gate_message.slice(0, 32) : undefined;
+// approval/Renderer.tsx — note nested data.approval.* shape
+const msg = node.data.approval?.message;
+const secondary = typeof msg === 'string' ? msg.slice(0, 32) : undefined;
 return <NodeShell variant="approval" label={node.id} selected={!!selected} badge="approval" secondary={secondary} />;
 
 // cancel/Renderer.tsx
@@ -6321,7 +6434,13 @@ import { useBuilderStore } from '../store/builder-store';
 import { VariantTile } from './library/VariantTile';
 import styles from './NodeLibrary.module.css';
 
-export function NodeLibrary() {
+export interface NodeLibraryProps {
+  /** Working directory — forwarded to the Commands section query. Required. */
+  cwd: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function NodeLibrary({ cwd }: NodeLibraryProps) {
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   return (
     <aside aria-label="Node library" className={styles.library}>
@@ -6339,7 +6458,7 @@ export function NodeLibrary() {
           ))}
         </ul>
       </section>
-      {/* Commands section — Task 48 */}
+      {/* Commands section — Task 48 will pass cwd here */}
       {/* Snippets section — Task 51 */}
     </aside>
   );
@@ -6409,7 +6528,7 @@ git commit -m "feat(library): NodeLibrary shell + Variants section + click-to-ad
 - Modify: `packages/studio-core/src/components/WorkflowBuilder.tsx` (created in Task 37) — wrap children in `<PositionProvider>` so `Canvas` and `SnippetsSection` share one persistence handle
 - Modify: `packages/studio-core/src/components/library/VariantTile.tsx` — wire `onDragStart`
 - Modify: `packages/studio-core/src/components/NodeLibrary.tsx` — pass drag handlers
-- Modify: `packages/studio-core/src/components/canvas/Canvas.tsx` (created in Task 36) — consume `usePositionContext`; wire `onDrop`/`onDragOver`
+- Modify: `packages/studio-core/src/components/Canvas.tsx` (created in Task 36) — consume `usePositionContext`; wire `onDrop`/`onDragOver`
 - Modify: `packages/studio-core/tests/components/NodeLibrary.spec.tsx` — drag-payload assertion test
 
 Library tiles emit a typed JSON payload via `dataTransfer`. Canvas owns React Flow's instance and calls `screenToFlowPosition` to convert the drop coordinates to graph space. The shape is built for three drag sources (variant tile, command row, snippet tile) so one `onDrop` handles everything; Tasks 48 and 51 plug their own kinds into the same channel.
@@ -6447,7 +6566,7 @@ Create `packages/studio-core/tests/hooks/PositionContext.spec.tsx`:
 
 ```tsx
 import { describe, it, expect, beforeAll } from 'bun:test';
-import { renderHook } from '@testing-library/react';
+import { render, renderHook } from '@testing-library/react';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { PositionProvider, usePositionContext } from '../../src/hooks/PositionContext';
 import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
@@ -6463,7 +6582,11 @@ const stub: UsePositionPersistence = {
 
 describe('PositionContext', () => {
   it('throws when read outside <PositionProvider>', () => {
-    expect(() => renderHook(() => usePositionContext())).toThrow(/PositionProvider/);
+    // Use a render-the-consumer pattern rather than `renderHook(...)`, since modern
+    // @testing-library/react catches errors from hooks and surfaces them via `result.error`
+    // rather than letting them bubble synchronously through the test fn.
+    const Bad = () => { usePositionContext(); return null; };
+    expect(() => render(<Bad />)).toThrow(/PositionProvider/);
   });
 
   it('returns the provided handle inside <PositionProvider>', () => {
@@ -6593,46 +6716,113 @@ The tile is already prop-ready from Task 46 (`draggable`, `onDragStart`). Pass t
 
 Add `import { LIBRARY_DRAG_MIME, encodeLibraryDrag } from './library/dragPayload';` at the top.
 
-- [ ] **Step 7: Wire `onDrop`/`onDragOver` on `Canvas`**
+- [ ] **Step 7: Refactor `Canvas` — drop `positions` prop, add `useReactFlow`, wrap with drop target, harden seed effect**
 
-Modify `packages/studio-core/src/components/canvas/Canvas.tsx`. Inside the component body, near where `useReactFlow` is called (Task 36 already gives us the instance for `screenToFlowPosition`):
+Phase 2 Task 36's Canvas takes `positions: UsePositionPersistence` as a prop, doesn't call `useReactFlow`, and renders `<ReactFlow …>` with no wrapping element. Phase 3 needs all three changed:
+
+(a) **Drop the `positions` prop in favor of `usePositionContext()`.** Phase 2 prop-drilled the handle from WorkflowBuilder; Phase 3 puts WorkflowBuilder behind `<PositionProvider>` (Step 1), so the prop is now redundant. Single source of truth.
+
+(b) **Add `useReactFlow()` for `screenToFlowPosition`.** The drop handler converts screen coords to flow coords; without the React Flow instance there's no projection.
+
+(c) **Wrap `<ReactFlow>` in a structural `<div>` carrying `onDrop`/`onDragOver`.** Drop events bubble from the wrapper, not from React Flow's internal pane (its handlers swallow them).
+
+(d) **Harden Canvas's seed-on-add effect** so adding a single node doesn't re-lay-out the whole graph. Phase 2 Task 36's seed effect runs dagre on the entire workflow whenever any node is missing a persisted position; that triggers on every click-to-add and snippet-insert in Phase 3, which would clobber every existing position. Scope the seed: if at least one node has a persisted position, only seed the missing ids using dagre's output (or skip dagre for the missing ones — they default to `{x:0,y:0}` until the user drags them, which is acceptable). The cleanest guard:
+
+```ts
+useEffect(() => {
+  const missing = nodes.filter((n) => !positions.positions.has(n.id));
+  if (missing.length === 0) return;
+  if (positions.positions.size === 0) {
+    // First-load: full dagre on the whole graph.
+    const layout = layoutWithDagre(...);
+    positions.setMany(layout);
+  } else {
+    // Some positions are persisted; only seed the missing ids — at origin if dagre can't place them
+    // contextually. (A richer fix that pins existing positions and lays out only the missing ids
+    // can land in v1.5 — for now, nodes added via library/snippets get an explicit setPosition call
+    // from the caller, so origin-fallback only fires for theoretically-impossible paths.)
+    const seed = new Map(missing.map((n) => [n.id, { x: 0, y: 0 }]));
+    positions.setMany(seed);
+  }
+}, [nodes, positions]);
+```
+
+Replace the Phase-2 Canvas implementation accordingly. The full updated component shape:
 
 ```tsx
-import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from '../library/dragPayload';
-import { useBuilderStore } from '../../store/builder-store';
-import { usePositionContext } from '../../hooks/PositionContext';
+import { useCallback, useEffect } from 'react';
+import { ReactFlow, useReactFlow } from '@xyflow/react';
+import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from './library/dragPayload';
+import { useBuilderStore } from '../store/builder-store';
+import { usePositionContext } from '../hooks/PositionContext';
+import { layoutWithDagre } from '../hooks/useDagre';
+// + nodeTypes import from Task 42 Step 6
+// + deriveFlow import from Task 42 Step 4
 
-// ...
+export function Canvas() {
+  const reactFlow = useReactFlow();
+  const positions = usePositionContext();
+  const nodes = useBuilderStore((s) => s.nodes);
+  const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
 
-const reactFlow = useReactFlow();
-const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
-const { setPosition } = usePositionContext();
+  // Hardened seed effect (replaces Phase 2's whole-graph re-layout).
+  useEffect(() => {
+    const missing = nodes.filter((n) => !positions.positions.has(n.id));
+    if (missing.length === 0) return;
+    if (positions.positions.size === 0) {
+      const layoutNodes = nodes.map((n) => ({ id: n.id, position: { x: 0, y: 0 } }));
+      const layoutEdges = nodes.flatMap((n) =>
+        ((n.base.depends_on as string[] | undefined) ?? []).map((s) => ({
+          id: `${s}->${n.id}`, source: s, target: n.id,
+        })),
+      );
+      positions.setMany(layoutWithDagre(layoutNodes, layoutEdges));
+    } else {
+      positions.setMany(new Map(missing.map((n) => [n.id, { x: 0, y: 0 }])));
+    }
+  }, [nodes, positions]);
 
-const onDragOver = useCallback((e: React.DragEvent) => {
-  if (e.dataTransfer.types.includes(LIBRARY_DRAG_MIME)) {
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(LIBRARY_DRAG_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData(LIBRARY_DRAG_MIME);
+    const payload = decodeLibraryDrag(raw);
+    if (!payload) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }
-}, []);
+    const flowPos = reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    if (payload.kind === 'variant') {
+      const id = addNodeFromVariant(payload.variantId, { dataPatch: payload.prefill });
+      positions.setPosition(id, flowPos);
+    }
+    // payload.kind === 'snippet' handled in Task 51 (insertSnippet wiring).
+  }, [reactFlow, addNodeFromVariant, positions]);
 
-const onDrop = useCallback((e: React.DragEvent) => {
-  const raw = e.dataTransfer.getData(LIBRARY_DRAG_MIME);
-  const payload = decodeLibraryDrag(raw);
-  if (!payload) return;
-  e.preventDefault();
-  const flowPos = reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-  if (payload.kind === 'variant') {
-    const id = addNodeFromVariant(payload.variantId, { dataPatch: payload.prefill });
-    setPosition(id, flowPos);
-  }
-  // payload.kind === 'snippet' handled in Task 51 (insertSnippet wiring).
-}, [reactFlow, addNodeFromVariant, setPosition]);
+  // ... derive rfNodes/rfEdges from useBuilderStore + positions per Phase 2 Task 36 ...
 
-// In the JSX, on the <div> wrapping <ReactFlow>:
-<div className={styles.canvas} onDrop={onDrop} onDragOver={onDragOver}>
-  <ReactFlow ...{...all the existing Phase-2 props} />
-</div>
+  return (
+    <div style={{ width: '100%', height: '100%' }} onDrop={onDrop} onDragOver={onDragOver}>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        nodeTypes={nodeTypes}
+        // ... all other Phase-2 ReactFlow props (onNodesChange, onConnect, etc.) ...
+      />
+    </div>
+  );
+}
 ```
+
+Update Phase 2's `Canvas.spec.tsx` (created in Task 36) to:
+- Wrap renders in `<PositionProvider value={stub}>` per the new contract.
+- Drop the `positions` prop from every `<Canvas positions={…} />` call.
+- Stub shape `{ positions: Map, setPosition, setMany, reset }` — same as the SnippetsSection spec stub from Task 51.
+
+Update Phase 2's `WorkflowBuilder.tsx` to render `<Canvas />` (no prop) and `<NodeLibrary cwd={cwd} />`.
 
 - [ ] **Step 8: Add a drag-encode test in `NodeLibrary.spec.tsx`**
 
@@ -6676,11 +6866,14 @@ git commit -m "feat(library): PositionContext + drag-from-library payload + Canv
 **Files:**
 - Create: `packages/studio-core/src/components/library/CommandsSection.tsx`
 - Create: `packages/studio-core/tests/components/library/CommandsSection.spec.tsx`
-- Modify: `packages/studio-core/src/components/NodeLibrary.tsx` — render `<CommandsSection />`
+- Modify: `packages/studio-core/src/components/NodeLibrary.tsx` — accept `cwd: string` prop; render `<CommandsSection cwd={cwd} />`
+- Modify: `packages/studio-core/src/components/WorkflowBuilder.tsx` — pass `cwd` down to `<NodeLibrary cwd={cwd} />`
 
-The Commands section pulls from `useWorkflowApi().listCommands()` (the `WorkflowApiClient` interface defined in Task 4 / Phase 0a). Each row is a `<button>` that on click adds a new `command` node prefilled with that command name and an id hint of `run-<name>`. Drag emits the same payload but with a `prefill: { command: name }`.
+The Commands section pulls from `useWorkflowApi().listCommands(cwd)` (the `WorkflowApiClient` interface from Phase 0 Task 4). The interface returns `{name: string; source: 'project' | 'global' | 'bundled'}[]` and **requires `cwd`** — Archon needs the working directory to resolve which `.archon/commands/` to scan. We prop-drill `cwd` from `WorkflowBuilder` (which already has it as a prop) through `NodeLibrary` to `CommandsSection`. One hop, two new prop declarations — simpler than introducing a new builder-config context.
 
-The standalone shell's `StubArchonApiClient` (Task 38) returns an empty list by default; we'll add a couple of stub command names so the section is non-empty during smoke. Real Archon connection lands in Phase 9.
+Each row is a `<button>` whose accessible label / displayed text is `cmd.name`; the source (`project` / `global` / `bundled`) is shown as a small subtitle so the user can disambiguate when bundled and project share a name. Click adds a new `command` node prefilled with `data.command = cmd.name` and an id hint of `run-<name>`. Drag emits the same payload with `prefill: { command: name }`.
+
+The standalone shell's `StubArchonApiClient` (Task 38) returns an empty list by default; we'll seed two stub rows so the section is non-empty during smoke. Real Archon connection lands in Phase 9.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6699,11 +6892,13 @@ import type { WorkflowApiClient } from '../../../src/api/WorkflowApiClient';
 beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
 beforeEach(() => useBuilderStore.getState().clearWorkflow());
 
-const mkClient = (cmds: string[]): WorkflowApiClient => ({
+type CommandRow = { name: string; source: 'project' | 'global' | 'bundled' };
+
+const mkClient = (cmds: CommandRow[]): WorkflowApiClient => ({
   ping: async () => ({ ok: true }),
   listCodebases: async () => null,
   listWorkflows: async () => [],
-  listCommands: async () => cmds,
+  listCommands: async (_cwd: string) => cmds,
   listProviders: async () => [],
   getWorkflow: async () => ({ name: '', description: '', nodes: [] }) as any,
   saveWorkflow: async (_n, _c, d) => d,
@@ -6716,24 +6911,29 @@ function renderWith(client: WorkflowApiClient) {
   return render(
     <QueryClientProvider client={qc}>
       <ApiClientProvider client={client}>
-        <CommandsSection />
+        <CommandsSection cwd="/abs/path/test-cwd" />
       </ApiClientProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('CommandsSection', () => {
-  it('renders one row per command from listCommands', async () => {
-    renderWith(mkClient(['classify', 'review']));
+  it('renders one row per command from listCommands, showing name + source subtitle', async () => {
+    renderWith(mkClient([
+      { name: 'classify', source: 'project' },
+      { name: 'review', source: 'bundled' },
+    ]));
     await waitFor(() => expect(screen.getByText('classify')).toBeDefined());
     expect(screen.getByText('review')).toBeDefined();
+    expect(screen.getByText(/project/i)).toBeDefined();
+    expect(screen.getByText(/bundled/i)).toBeDefined();
   });
 
   it('click-to-add appends a command node with prefilled command + scoped id hint', async () => {
     useBuilderStore.getState().loadWorkflow({
       meta: { name: 'w', description: '', base: {}, unknown: {} }, nodes: [],
     });
-    renderWith(mkClient(['classify']));
+    renderWith(mkClient([{ name: 'classify', source: 'project' }]));
     await waitFor(() => expect(screen.getByText('classify')).toBeDefined());
     fireEvent.click(screen.getByLabelText('Add command running classify'));
     const nodes = useBuilderStore.getState().nodes;
@@ -6765,12 +6965,17 @@ import { useWorkflowApi } from '../../api/ApiClientProvider';
 import { useBuilderStore } from '../../store/builder-store';
 import { LIBRARY_DRAG_MIME, encodeLibraryDrag } from './dragPayload';
 
-export function CommandsSection() {
+export interface CommandsSectionProps {
+  /** Working directory passed in from WorkflowBuilder via NodeLibrary. */
+  cwd: string;
+}
+
+export function CommandsSection({ cwd }: CommandsSectionProps) {
   const client = useWorkflowApi();
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['commands'],
-    queryFn: () => client.listCommands(),
+    queryKey: ['commands', cwd],
+    queryFn: () => client.listCommands(cwd),
   });
 
   return (
@@ -6783,29 +6988,34 @@ export function CommandsSection() {
       )}
       {data && data.length > 0 && (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {data.map((name) => (
-            <li key={name}>
+          {data.map((cmd) => (
+            <li key={`${cmd.source}:${cmd.name}`}>
               <button
                 type="button"
-                aria-label={`Add command running ${name}`}
+                aria-label={`Add command running ${cmd.name}`}
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData(
                     LIBRARY_DRAG_MIME,
-                    encodeLibraryDrag({ kind: 'variant', variantId: 'command', prefill: { command: name } }),
+                    encodeLibraryDrag({ kind: 'variant', variantId: 'command', prefill: { command: cmd.name } }),
                   );
                   e.dataTransfer.effectAllowed = 'copy';
                 }}
                 onClick={() =>
                   addNodeFromVariant('command', {
-                    idHintOverride: `run-${name}`,
-                    dataPatch: { command: name },
+                    idHintOverride: `run-${cmd.name}`,
+                    dataPatch: { command: cmd.name },
                   })
                 }
                 style={rowStyle}
               >
                 <span style={{ width: 4, height: 16, borderRadius: 2, background: 'var(--node-command)' }} />
-                <span style={{ fontSize: 13 }}>{name}</span>
+                <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 13 }}>{cmd.name}</span>
+                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--studio-muted)' }}>
+                    {cmd.source}
+                  </span>
+                </span>
               </button>
             </li>
           ))}
@@ -6829,13 +7039,19 @@ const rowStyle: React.CSSProperties = {
 };
 ```
 
-- [ ] **Step 4: Render `CommandsSection` inside `NodeLibrary`**
+- [ ] **Step 4: Wire `cwd` through `WorkflowBuilder` → `NodeLibrary` → `CommandsSection`**
 
-Modify `packages/studio-core/src/components/NodeLibrary.tsx`. Replace the `{/* Commands section — Task 48 */}` comment with `<CommandsSection />` and add the import.
+Modify `packages/studio-core/src/components/NodeLibrary.tsx`:
+1. Add a `cwd: string` prop to a new `NodeLibraryProps` interface; destructure in the function signature.
+2. Replace the `{/* Commands section — Task 48 */}` comment with `<CommandsSection cwd={cwd} />` and add the import.
 
-- [ ] **Step 5: Add 2 stub command names to `StubArchonApiClient` so smoke is non-empty**
+Modify `packages/studio-core/src/components/WorkflowBuilder.tsx`. The shell already destructures `cwd` from its props (Phase 2 Task 37). Change `<NodeLibrary />` to `<NodeLibrary cwd={cwd} />`.
 
-Modify `apps/standalone/src/StubArchonApiClient.ts` (created in Task 38). Change `listCommands` to return `['classify', 'review']` instead of `[]`. (When Phase 9 swaps in the real client, this returns to whatever the user's Archon ships.)
+Update Task 46's `NodeLibrary.spec.tsx` calls — every `<NodeLibrary />` becomes `<NodeLibrary cwd="/abs/path/test-cwd" />`. The Variants-only tests don't depend on cwd, so any string suffices.
+
+- [ ] **Step 5: Add 2 stub command rows to `StubArchonApiClient` so smoke is non-empty**
+
+Modify `packages/studio-api-archon/src/StubArchonApiClient.ts` (created in Task 38). Change `listCommands` to return `[{name: 'classify', source: 'project'}, {name: 'review', source: 'project'}]` instead of `[]`. (When Phase 9 swaps in the real client, this returns to whatever the user's Archon ships.) Note the shape: `{name: string; source: 'project' | 'global' | 'bundled'}[]` per the `WorkflowApiClient` interface (Phase 0 Task 4).
 
 - [ ] **Step 6: Run, expect green**
 
@@ -7065,7 +7281,17 @@ export function insertSnippet({ yaml, anchorPosition, setPosition }: InsertSnipp
 
   const renamed = renameSubgraph(snippetNodes, idMap);
 
-  const layout = layoutWithDagre(renamed); // returns Map<id, {x,y}>; same dagre params as Phase 2
+  // Phase 2's layoutWithDagre signature is (nodes, edges) — both required (Phase 2 Task 33).
+  // Build the minimal RF-shape inputs from the renamed subgraph.
+  const renamedIds = new Set(renamed.map((n) => n.id));
+  const layoutNodes = renamed.map((n) => ({ id: n.id, position: { x: 0, y: 0 } }));
+  const layoutEdges = renamed.flatMap((n) => {
+    const dep = (n.base.depends_on as string[] | undefined) ?? [];
+    return dep
+      .filter((src) => renamedIds.has(src)) // only intra-subgraph edges feed dagre
+      .map((src) => ({ id: `${src}->${n.id}`, source: src, target: n.id }));
+  });
+  const layout = layoutWithDagre(layoutNodes, layoutEdges); // Map<id, {x,y}>
 
   // Centroid of the laid-out subgraph
   let cx = 0, cy = 0, count = 0;
@@ -7088,7 +7314,7 @@ export function insertSnippet({ yaml, anchorPosition, setPosition }: InsertSnipp
 }
 ```
 
-If `layoutWithDagre` isn't yet exported as a pure helper from Task 33, surface the dagre call in this module with the same params (`rankdir: 'TB'`, `ranksep: 80`, `nodesep: 40`, node 180×80) — duplication is fine here; we DRY when there are >2 call sites. The Phase 4 plan should hoist it.
+Phase 2 Task 33 already exports `layoutWithDagre` as a pure helper (`(nodes, edges) → Map<id, {x,y}>`); this task consumes it directly. Same params (`rankdir: 'TB'`, `ranksep: 80`, `nodesep: 40`, node 180×80) so snippet inserts visually match canvas auto-layout.
 
 - [ ] **Step 8: Run, expect green**
 
@@ -7131,6 +7357,15 @@ cp packages/studio-fixtures/src/round-trip-fixtures/<name>.yaml \
 ```
 
 Then trim each: remove any `cwd:` fields and any `provider:` defaults that hard-code an org-specific value, leaving the structural workflow intact. Keep `description:` so the library tile shows it.
+
+- [ ] **Step 1.5: Verify the trimmed starters still validate**
+
+Add the three starter names to `SNIPPET_STARTERS` (Step 3 below — read ahead) **temporarily**, run only the starter half of the validity test, and confirm green before moving on. This catches over-aggressive trimming that removes a required field:
+
+```bash
+bun --filter='@archon-studio/core' test -t "starter '"
+```
+Expected: 3 passing. If any starter fails Zod, restore the field that was over-trimmed (likely a `description` or top-level required key) and re-run.
 
 - [ ] **Step 2: Author 3 pattern YAMLs**
 
@@ -7181,20 +7416,26 @@ Create `packages/studio-fixtures/src/snippets/patterns/loop-until-signal.yaml`:
 
 ```yaml
 name: loop-until-signal
-description: Loop with iteration cap, stops when the body emits a 'done' signal.
+description: Loop with iteration cap that stops when AI output contains the completion signal.
 nodes:
   - id: iterate
     loop:
-      iteration_cap: 5
+      max_iterations: 5
+      until: 'COMPLETE'
       prompt: |
-        Make incremental progress on the task. End your output with 'done' if complete.
-  - id: gate
-    bash: |
-      echo "$iterate.output" | grep -q 'done$' && exit 0 || exit 1
+        Make incremental progress on the task. When fully done, end your reply with the word COMPLETE.
+  - id: followup
+    prompt: |
+      Summarise the result from $iterate.output.
     depends_on: [iterate]
 ```
 
-(These are Phase-3-shippable: no body-ref cycles, no fields outside the registered Zod schemas, no resources to resolve.)
+Schema notes (verified against `packages/studio-core/src/schemas/loop.ts`):
+- `loop.max_iterations` (positive integer, required) — NOT `iteration_cap`.
+- `loop.until` (non-empty string, required) — completion signal Archon's executor scans for in AI output each iteration.
+- `loop.prompt` (non-empty string, required).
+
+(These three patterns are Phase-3-shippable: no body-ref cycles, no fields outside the registered Zod schemas, no resources to resolve.)
 
 - [ ] **Step 3: Update `studio-fixtures` index to expose snippet constants**
 
@@ -7219,21 +7460,33 @@ import { parse } from 'yaml';
 import {
   SNIPPET_STARTERS, SNIPPET_PATTERNS, loadSnippet,
 } from '@archon-studio/fixtures';
+import { workflowDefinitionSchema } from '../../src/schemas';
 import { fromWorkflowDefinition } from '../../src/exporter/fromWorkflowDefinition';
 
+/**
+ * Two-stage validation per snippet:
+ *   1. Canonical Zod parse — catches schema-name typos like `iteration_cap` (loop schema requires
+ *      `max_iterations` + `until`). Without this stage, fromWorkflowDefinition's tolerant import
+ *      lifts unknown fields into _unknown silently and the snippet ships broken.
+ *   2. Studio importer — catches importer-side regressions and confirms node count.
+ */
 describe('snippet fixtures', () => {
   for (const name of SNIPPET_STARTERS) {
-    it(`starter '${name}' parses cleanly through fromWorkflowDefinition`, () => {
+    it(`starter '${name}' is canonical-Zod-valid and imports cleanly`, () => {
       const yaml = loadSnippet('starters', name);
       const def = parse(yaml);
+      const zod = workflowDefinitionSchema.safeParse(def);
+      expect(zod.success).toBe(true);
       const result = fromWorkflowDefinition(def);
       expect(result.nodes.length).toBeGreaterThan(0);
     });
   }
   for (const name of SNIPPET_PATTERNS) {
-    it(`pattern '${name}' parses cleanly through fromWorkflowDefinition`, () => {
+    it(`pattern '${name}' is canonical-Zod-valid and imports cleanly`, () => {
       const yaml = loadSnippet('patterns', name);
       const def = parse(yaml);
+      const zod = workflowDefinitionSchema.safeParse(def);
+      expect(zod.success).toBe(true);
       const result = fromWorkflowDefinition(def);
       expect(result.nodes.length).toBeGreaterThan(0);
     });
@@ -7263,9 +7516,9 @@ git commit -m "feat(snippets): seed 3 starters + 3 patterns + fixture-validity r
 - Create: `packages/studio-core/src/components/library/SnippetsSection.tsx`
 - Create: `packages/studio-core/tests/components/library/SnippetsSection.spec.tsx`
 - Modify: `packages/studio-core/src/components/NodeLibrary.tsx` — render `<SnippetsSection />`
-- Modify: `packages/studio-core/src/components/canvas/Canvas.tsx` — extend `onDrop` to handle `kind: 'snippet'`
+- Modify: `packages/studio-core/src/components/Canvas.tsx` — extend `onDrop` to handle `kind: 'snippet'`
 
-The snippets UI groups starters and patterns under separate subheadings. Each row carries the snippet's `description` as a tooltip and emits a `kind: 'snippet'` drag payload. Click-to-add inserts the snippet at canvas viewport center (the React Flow instance's `getViewport()` centre, projected back to flow space).
+The snippets UI groups starters and patterns under separate subheadings. Each row carries the snippet's `description` as a tooltip and emits a `kind: 'snippet'` drag payload. Click-to-add inserts the snippet at canvas origin `{x:0, y:0}` for keyboard parity with Variants click — drag uses `Canvas.onDrop` for cursor-follow placement. (Viewport-center click placement is a v1.5 candidate; it would require the snippets section to consume `useReactFlow().getViewport()`, which we'd rather not pull into the library to keep its component independent of canvas state.)
 
 `apps/standalone` ships `yaml` as a peer dep (verify Phase 0 already pinned it; if not, add to `packages/studio-core/package.json` deps).
 
@@ -7427,7 +7680,7 @@ Modify `NodeLibrary.tsx` — replace the `{/* Snippets section — Task 51 */}` 
 
 - [ ] **Step 6: Extend Canvas `onDrop` to handle `kind: 'snippet'`**
 
-Modify `packages/studio-core/src/components/canvas/Canvas.tsx`. In the `onDrop` handler from Task 47, add the snippet branch:
+Modify `packages/studio-core/src/components/Canvas.tsx`. In the `onDrop` handler from Task 47, add the snippet branch:
 
 ```tsx
 import { loadSnippet } from '@archon-studio/fixtures';
@@ -7520,13 +7773,14 @@ git push origin phase-3
 
 ## Phase 3 deliverables checklist
 
+- [ ] Phase-2 reality check passes (Canvas path, useReactFlow, layoutWithDagre arity, listCommands shape, nested variant TData, test preload) (Task 41.5)
 - [ ] `VariantDefinition.Renderer` slot filled; `deriveFlow` emits `type: variant` + pass-through `BuilderNode`; nodeTypes built from registry; DagNodeComponent retired (Task 42)
 - [ ] `NodeShell` shared visual primitive with optional badge / secondary slots (Task 43)
 - [ ] All 7 per-variant Renderers — distinct stripes, variant-appropriate badges and secondaries (Task 44)
 - [ ] `makeUniqueId` pure helper + `addNodeFromVariant` store action with `idHintOverride` / `dataPatch` (Task 45)
 - [ ] `NodeLibrary` shell + Variants section + click-to-add wired through `addNodeFromVariant` (Task 46)
-- [ ] `PositionProvider` + `usePositionContext` so Canvas and SnippetsSection share one persistence handle; library drag payload codec + Canvas `onDrop` / `onDragOver` projecting screen → flow position (Task 47)
-- [ ] Commands section pulls from `WorkflowApiClient.listCommands` via TanStack Query; click-to-add and drag both prefill `data.command` (Task 48)
+- [ ] `PositionProvider` + `usePositionContext` so Canvas and SnippetsSection share one persistence handle; Canvas refactored to consume the context, call `useReactFlow`, wrap with a drop target, and harden the seed-on-add effect; library drag payload codec + Canvas `onDrop` / `onDragOver` projecting screen → flow position (Task 47)
+- [ ] Commands section pulls from `WorkflowApiClient.listCommands(cwd)` via TanStack Query; consumes `{name, source}[]` rows; `cwd` prop-drilled WorkflowBuilder → NodeLibrary → CommandsSection; click-to-add and drag both prefill `data.command` (Task 48)
 - [ ] `renameSubgraph` (id + depends_on + when string refs) + `insertSnippet` (importer → rename → dagre → translate → seed positions) (Task 49)
 - [ ] 3 starter snippets (curated bundled defaults) + 3 pattern snippets (classify-then-branch, fan-out-collect, loop-until-signal) + fixture-validity test (Task 50)
 - [ ] Snippets section in `NodeLibrary` + Canvas `onDrop` snippet branch (Task 51)
