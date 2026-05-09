@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "bun test --preload ./tests/setup.ts"
   },
   "peerDependencies": {
