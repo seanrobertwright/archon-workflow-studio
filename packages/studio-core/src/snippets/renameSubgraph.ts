@@ -12,6 +12,12 @@ function escapeRegExp(s: string): string {
  *
  * Body refs in prompt/bash/script/loop.prompt/approval.message are Phase 4 work and not handled here.
  *
+ * Identifier boundary: matches `$<oldId>` only when followed by a non-id character.
+ * The id charset is `[A-Za-z0-9_-]` (slug). Plain `\b` is not enough because hyphens
+ * are word boundaries — `\$run\b` would falsely match inside `$run-cmd`. The negative
+ * lookahead `(?![A-Za-z0-9_-])` treats hyphen as part of the identifier, so prefix-of
+ * collisions like (oldId='run', body='$run-cmd.output') stay untouched.
+ *
  * Caller contract: `idMap` MUST NOT contain chained mappings (e.g., both `a → a-2` AND `a-2 → x`).
  * The when-string regex sweep iterates the map; chained entries can re-rewrite a freshly-introduced
  * id. Phase-3 callers pick targets via `makeUniqueId`, which produces fresh suffixes that aren't
@@ -31,7 +37,10 @@ export function renameSubgraph(
     if (typeof w === 'string') {
       let result = w;
       for (const [oldId, newId] of idMap) {
-        result = result.replace(new RegExp(`\\$${escapeRegExp(oldId)}\\b`, 'g'), `$${newId}`);
+        result = result.replace(
+          new RegExp(`\\$${escapeRegExp(oldId)}(?![A-Za-z0-9_-])`, 'g'),
+          `$${newId}`,
+        );
       }
       next.base.when = result;
     }

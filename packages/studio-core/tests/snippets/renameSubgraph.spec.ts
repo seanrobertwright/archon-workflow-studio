@@ -50,4 +50,15 @@ describe('renameSubgraph', () => {
     expect(out[0].id).toBe('keep');
     expect(out[1].base.depends_on).toEqual(['keep']);
   });
+
+  it('does not partial-match when one id is a hyphen-prefix of another', () => {
+    // Hazard: `\b` treats `-` as a word boundary, so `\$run\b` would falsely
+    // match inside `$run-cmd`. With the hyphen-aware lookahead, `$run-cmd`
+    // stays intact when only `run` is mapped.
+    const out = renameSubgraph(
+      [n({ id: 'gate', base: { when: '$run.output == 1 && $run-cmd.output == 2' } })],
+      new Map([['run', 'run-2']]),
+    );
+    expect(out[0].base.when).toBe('$run-2.output == 1 && $run-cmd.output == 2');
+  });
 });
