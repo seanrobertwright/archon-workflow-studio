@@ -76,10 +76,14 @@ export function Canvas() {
 
   // Seed positions for any node id NOT already in the map.
   // Phase-3 hardening (Task 47): on first load (positions empty), run dagre on
-  // the whole graph. On a subsequent partial-miss (theoretically only when a
-  // caller adds without setting a position) seed at origin so we don't clobber
-  // existing persisted layouts. Library drag-drop sets the position itself
-  // before this effect runs, so it never enters the "missing" branch.
+  // the whole graph. On a subsequent partial-miss, seed at origin so we don't
+  // clobber existing persisted layouts. Two callers reach this branch:
+  //   - Drag-drop (Canvas onDrop): sets the position itself BEFORE this effect
+  //     runs, so the new id is never "missing" here.
+  //   - Click-to-add (NodeLibrary onActivate): does not set a position, so the
+  //     new node lands at origin by design — per plan, click is the keyboard-
+  //     friendly fallback and the user drags the new node into place. The
+  //     stacking-at-origin behavior on rapid sequential clicks is acceptable v1.
   useEffect(() => {
     const missing = derivedNodes.filter((n) => !positions.positions.has(n.id));
     if (missing.length === 0) return;
