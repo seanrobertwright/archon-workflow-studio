@@ -63,12 +63,9 @@ describe('Canvas', () => {
         <Canvas positions={positions} />
       </ReactFlowProvider>,
     );
-    // The placeholder per-variant Renderer (Task 42) renders a div with
-    // data-placeholder-variant. Real label/visuals land in Task 44.
+    // Each command node's NodeShell tags itself with data-variant="command".
     // React Flow renders each node twice (visible + hidden measurement); accept ≥2.
-    expect(
-      container.querySelectorAll('[data-placeholder-variant="command"]').length,
-    ).toBeGreaterThan(0);
+    expect(container.querySelectorAll('[data-variant="command"]').length).toBeGreaterThan(0);
     // React Flow tags each rendered node with data-id; both store ids should appear.
     expect(container.querySelector('[data-id="a"]')).toBeDefined();
     expect(container.querySelector('[data-id="b"]')).toBeDefined();
