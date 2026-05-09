@@ -17,6 +17,13 @@ export function CommandsSection({ cwd }: CommandsSectionProps) {
     queryFn: () => client.listCommands(cwd),
   });
 
+  // Slug-safe id hint: Archon command names follow a slug convention by file
+  // path (.archon/commands/<name>.md), but we don't enforce it here. Strip
+  // anything that would break BuilderNode.id-as-string-key invariants used by
+  // depends_on / when refs / Task 49 renameSubgraph. Keeps the literal name in
+  // data.command for execution.
+  const slugify = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, '-');
+
   return (
     <section style={{ padding: 12, borderBottom: '1px solid var(--studio-muted)' }}>
       <h3 style={headingStyle}>Commands</h3>
@@ -55,7 +62,7 @@ export function CommandsSection({ cwd }: CommandsSectionProps) {
                 }}
                 onClick={() =>
                   addNodeFromVariant('command', {
-                    idHintOverride: `run-${cmd.name}`,
+                    idHintOverride: `run-${slugify(cmd.name)}`,
                     dataPatch: { command: cmd.name },
                   })
                 }

@@ -2,8 +2,9 @@
   display: flex; flex-direction: column;
   height: 100%;
   background: var(--studio-bg);
-  border-right: 1px solid var(--studio-muted);
   overflow-y: auto;
+  /* border-right is owned by the WorkflowBuilder grid cell wrapper to avoid
+     the duplicate-1px-border that was rendering as a 2px line. */
 }
 .section {
   padding: 12px;
