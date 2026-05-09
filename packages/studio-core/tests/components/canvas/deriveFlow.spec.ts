@@ -12,13 +12,33 @@ const node = (over: Partial<BuilderNode>): BuilderNode => ({
 });
 
 describe('deriveFlow', () => {
-  it('emits one rfNode per store node, all with type "dag"', () => {
-    const { rfNodes } = deriveFlow([node({ id: 'a' }), node({ id: 'b' })], new Map());
+  // 1. Rewritten: type === variant id (was 'dag').
+  it("emits one rfNode per store node, type === each node's variant id", () => {
+    const { rfNodes } = deriveFlow(
+      [
+        node({ id: 'a', variant: 'command' }),
+        node({ id: 'b', variant: 'loop', data: { loop: {} } }),
+      ],
+      new Map(),
+    );
     expect(rfNodes).toHaveLength(2);
-    expect(rfNodes.every((n) => n.type === 'dag')).toBe(true);
-    expect(rfNodes.map((n) => n.id)).toEqual(['a', 'b']);
+    expect(rfNodes.find((n) => n.id === 'a')?.type).toBe('command');
+    expect(rfNodes.find((n) => n.id === 'b')?.type).toBe('loop');
   });
 
+  // 2. Rewritten: full BuilderNode pass-through on rfNode.data.node.
+  it('passes the full BuilderNode through on rfNode.data.node', () => {
+    const src = node({
+      id: 'a',
+      variant: 'loop',
+      data: { loop: { max_iterations: 5, prompt: 'p', until: 'COMPLETE' } },
+    });
+    const { rfNodes } = deriveFlow([src], new Map());
+    expect(rfNodes[0].data.node).toBe(src); // identity, not deep-clone — pure projection
+    expect(rfNodes[0].data.storeId).toBe('a');
+  });
+
+  // 3-6. Copied verbatim from Phase 2 Task 32 — bodies unchanged.
   it('uses position map when present, defaults to {x:0,y:0} otherwise', () => {
     const { rfNodes } = deriveFlow(
       [node({ id: 'a' }), node({ id: 'b' })],
@@ -52,11 +72,6 @@ describe('deriveFlow', () => {
     const e = rfEdges.find((e) => e.id === 'a->b')!;
     expect(e.style?.strokeDasharray).toBeDefined();
     expect(e.style?.stroke).toBe('var(--studio-when)');
-  });
-
-  it('passes variant id through on rfNode.data so DagNodeComponent can read it', () => {
-    const { rfNodes } = deriveFlow([node({ id: 'a', variant: 'loop' })], new Map());
-    expect(rfNodes[0].data).toMatchObject({ variant: 'loop', storeId: 'a' });
   });
 
   it('skips depends_on entries whose source is missing (defensive)', () => {

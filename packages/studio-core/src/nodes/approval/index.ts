@@ -7,6 +7,7 @@ import {
   approvalLibrary,
 } from './data';
 import { approvalFromDag } from './fromDag';
+import { ApprovalRenderer } from './Renderer';
 import { approvalToDag } from './toDag';
 
 export type { ApprovalNodeData };
@@ -19,4 +20,5 @@ export const approvalVariant: VariantDefinition<ApprovalNodeData> = {
   createDefault: createApprovalDefault,
   fromDag: approvalFromDag,
   toDag: approvalToDag,
+  Renderer: ApprovalRenderer,
 };

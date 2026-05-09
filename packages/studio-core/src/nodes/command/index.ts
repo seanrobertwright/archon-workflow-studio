@@ -7,6 +7,7 @@ import {
   commandLibrary,
 } from './data';
 import { commandFromDag } from './fromDag';
+import { CommandRenderer } from './Renderer';
 import { commandToDag } from './toDag';
 
 export type { CommandNodeData };
@@ -19,4 +20,5 @@ export const commandVariant: VariantDefinition<CommandNodeData> = {
   createDefault: createCommandDefault,
   fromDag: commandFromDag,
   toDag: commandToDag,
+  Renderer: CommandRenderer,
 };

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
 import {
   ReactFlow,
   Background,
@@ -6,6 +6,7 @@ import {
   applyNodeChanges,
   type NodeChange,
   type Node as RFNode,
+  type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -13,15 +14,14 @@ import { useBuilderStore } from '../store/builder-store';
 import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
 import { layoutWithDagre } from '../hooks/useDagre';
 import type { UsePositionPersistence } from '../hooks/usePositionPersistence';
-import { DagNodeComponent } from './DagNodeComponent';
+import { defaultRegistry } from '../nodes/default-registry';
+import { VARIANT_IDS } from '../nodes/registry';
 import {
   makeOnNodesChange,
   makeOnConnect,
   makeOnEdgesDelete,
   makeOnNodesDelete,
 } from './canvas/canvasHandlers';
-
-const NODE_TYPES = { dag: DagNodeComponent };
 
 export interface CanvasProps {
   /** Position-persistence handle. WorkflowBuilder constructs the real one; tests pass a stub. */
@@ -33,6 +33,19 @@ export function Canvas({ positions }: CanvasProps) {
   const connect = useBuilderStore((s) => s.connect);
   const disconnect = useBuilderStore((s) => s.disconnect);
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
+
+  // Build the React Flow nodeTypes map from the variant registry. Each per-variant
+  // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
+  // so React Flow dispatches to the correct component. The cast is justified at the
+  // dispatcher boundary — typed `TData` is reclaimed inside each Renderer.
+  const nodeTypes = useMemo(
+    () =>
+      Object.fromEntries(VARIANT_IDS.map((id) => [id, defaultRegistry[id].Renderer])) as Record<
+        string,
+        ComponentType<NodeProps>
+      >,
+    [],
+  );
 
   // Derive RF nodes/edges from the store. `deriveFlow` returns {x:0,y:0} for
   // any node missing from the persistence map; we overlay seeded/persisted
@@ -97,7 +110,7 @@ export function Canvas({ positions }: CanvasProps) {
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
-      nodeTypes={NODE_TYPES}
+      nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
       onConnect={onConnect}
       onEdgesDelete={onEdgesDelete}

@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react';
+import type { Node as RFNode, NodeProps } from '@xyflow/react';
 import type { z } from 'zod';
 import type { VariantId } from '../registry';
 import type { DagNode } from '../../schemas';
@@ -53,6 +55,15 @@ export interface BuilderNode<TData = unknown> {
 export type BaseFields = Record<string, unknown>;
 export type VariantSpecificFields = Record<string, unknown>;
 
+/**
+ * What every per-variant Renderer receives via React Flow's `data` prop.
+ * `node` is a reference to the live store BuilderNode (never deep-cloned by deriveFlow).
+ */
+export interface DagNodeData<TData = unknown> extends Record<string, unknown> {
+  storeId: string;
+  node: BuilderNode<TData>;
+}
+
 /** Shape of a per-variant module's contribution to the registry (Phase 1 data slice). */
 export interface VariantDefinition<TData> {
   id: VariantId;
@@ -72,5 +83,11 @@ export interface VariantDefinition<TData> {
   }) => TData;
   /** Inverse of fromDag — produces the variant-specific subset of a DagNode. */
   toDag: (data: TData) => Partial<DagNode>;
-  // Phase 3 adds: Renderer; Phase 4 adds: Inspector.
+  /**
+   * Phase-3 React component that React Flow mounts for `type === id`.
+   * xyflow v12's `NodeProps` is generic over the WHOLE Node type (not just data),
+   * so we wrap with `RFNode<DagNodeData<TData>, VariantId>`.
+   */
+  Renderer: ComponentType<NodeProps<RFNode<DagNodeData<TData>, VariantId>>>;
+  // Phase 4 adds: Inspector.
 }

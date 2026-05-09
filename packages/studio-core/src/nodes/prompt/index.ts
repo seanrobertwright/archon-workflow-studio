@@ -7,6 +7,7 @@ import {
   promptLibrary,
 } from './data';
 import { promptFromDag } from './fromDag';
+import { PromptRenderer } from './Renderer';
 import { promptToDag } from './toDag';
 
 export type { PromptNodeData };
@@ -19,4 +20,5 @@ export const promptVariant: VariantDefinition<PromptNodeData> = {
   createDefault: createPromptDefault,
   fromDag: promptFromDag,
   toDag: promptToDag,
+  Renderer: PromptRenderer,
 };

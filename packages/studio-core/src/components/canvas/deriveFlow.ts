@@ -1,13 +1,8 @@
 import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react';
 import type { BuilderNode } from '../../nodes/shared/types';
-import type { VariantId } from '../../nodes/registry';
+import type { DagNodeData } from '../../nodes/shared/types';
 
-export interface DagNodeData extends Record<string, unknown> {
-  variant: VariantId;
-  storeId: string;
-  /** Read by DagNodeComponent for label rendering. */
-  label: string;
-}
+export type { DagNodeData };
 
 export interface DeriveFlowResult {
   rfNodes: RFNode<DagNodeData>[];
@@ -22,9 +17,9 @@ export function deriveFlow(
 
   const rfNodes: RFNode<DagNodeData>[] = storeNodes.map((n) => ({
     id: n.id,
-    type: 'dag',
+    type: n.variant,
     position: positions.get(n.id) ?? { x: 0, y: 0 },
-    data: { variant: n.variant, storeId: n.id, label: n.id },
+    data: { storeId: n.id, node: n },
   }));
 
   const rfEdges: RFEdge[] = [];

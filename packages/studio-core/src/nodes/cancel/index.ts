@@ -7,6 +7,7 @@ import {
   cancelLibrary,
 } from './data';
 import { cancelFromDag } from './fromDag';
+import { CancelRenderer } from './Renderer';
 import { cancelToDag } from './toDag';
 
 export type { CancelNodeData };
@@ -19,4 +20,5 @@ export const cancelVariant: VariantDefinition<CancelNodeData> = {
   createDefault: createCancelDefault,
   fromDag: cancelFromDag,
   toDag: cancelToDag,
+  Renderer: CancelRenderer,
 };

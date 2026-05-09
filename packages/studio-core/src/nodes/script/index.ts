@@ -7,6 +7,7 @@ import {
   scriptLibrary,
 } from './data';
 import { scriptFromDag } from './fromDag';
+import { ScriptRenderer } from './Renderer';
 import { scriptToDag } from './toDag';
 
 export type { ScriptNodeData };
@@ -19,4 +20,5 @@ export const scriptVariant: VariantDefinition<ScriptNodeData> = {
   createDefault: createScriptDefault,
   fromDag: scriptFromDag,
   toDag: scriptToDag,
+  Renderer: ScriptRenderer,
 };

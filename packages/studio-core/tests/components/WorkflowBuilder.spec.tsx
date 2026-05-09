@@ -33,7 +33,7 @@ describe('WorkflowBuilder', () => {
       meta: { name: 'demo', description: '', base: {}, unknown: {} },
       nodes: [{ id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} }],
     });
-    render(
+    const { container } = render(
       <WorkflowBuilder
         client={noopClient}
         theme="archon-dark"
@@ -43,10 +43,10 @@ describe('WorkflowBuilder', () => {
       />,
     );
     expect(screen.getByText('demo')).toBeDefined(); // toolbar shows name
-    // React Flow renders each node twice (visible + hidden measurement node), so
-    // accept ≥1 match. The point of this assertion is "the canvas mounted the node",
-    // not "there is exactly one DOM element with this text".
-    expect(screen.getAllByText('only').length).toBeGreaterThan(0);
+    // The point of this assertion is "the canvas mounted the node" — keyed off
+    // React Flow's data-id rather than label text, since per-variant labels land
+    // in Task 44 (placeholder Renderers in Task 42 don't print the id).
+    expect(container.querySelector('[data-id="only"]')).toBeDefined();
     expect(screen.getByLabelText('Node library')).toBeDefined();
     expect(screen.getByLabelText('Node inspector')).toBeDefined();
   });

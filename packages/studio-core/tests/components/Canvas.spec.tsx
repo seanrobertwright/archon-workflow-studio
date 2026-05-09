@@ -55,17 +55,23 @@ const seedTwoNodes = () => {
 };
 
 describe('Canvas', () => {
-  it('renders one DagNodeComponent per store node', () => {
+  it('renders one node per store node, dispatched by variant', () => {
     seedTwoNodes();
     const positions = stubPositionsHook();
-    render(
+    const { container } = render(
       <ReactFlowProvider>
         <Canvas positions={positions} />
       </ReactFlowProvider>,
     );
-    // React Flow renders each node twice (visible + hidden measurement). Accept ≥1.
-    expect(screen.getAllByText('a').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('b').length).toBeGreaterThan(0);
+    // The placeholder per-variant Renderer (Task 42) renders a div with
+    // data-placeholder-variant. Real label/visuals land in Task 44.
+    // React Flow renders each node twice (visible + hidden measurement); accept ≥2.
+    expect(
+      container.querySelectorAll('[data-placeholder-variant="command"]').length,
+    ).toBeGreaterThan(0);
+    // React Flow tags each rendered node with data-id; both store ids should appear.
+    expect(container.querySelector('[data-id="a"]')).toBeDefined();
+    expect(container.querySelector('[data-id="b"]')).toBeDefined();
   });
 
   it('seeds dagre positions for nodes missing from the persistence map', () => {
