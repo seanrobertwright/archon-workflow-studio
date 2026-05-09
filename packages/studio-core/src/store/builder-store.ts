@@ -27,6 +27,15 @@ export interface BuilderState {
   setWorkflowDescription: (description: string) => void;
 
   addNode: (node: BuilderNode) => void;
+  /**
+   * Mint a new node from a variant's `createDefault()` and append it to the store.
+   * Returns the id chosen via `makeUniqueId(hint, existingIds)` so callers can
+   * persist a position for the new node.
+   *
+   * `dataPatch` is **shallow-merged** onto `createDefault()` — for nested-data
+   * variants (loop, approval), patching `data.loop` replaces the whole loop
+   * config object. Phase-3 callers (Commands section) only patch flat fields.
+   */
   addNodeFromVariant: (
     variantId: VariantId,
     options?: { idHintOverride?: string; dataPatch?: Record<string, unknown> },
