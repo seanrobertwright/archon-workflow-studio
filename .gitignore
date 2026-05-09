@@ -56,6 +56,9 @@ htmlcov/
 .claude/settings.local.json
 .superpowers/
 
+# --- Git worktrees (isolated phase workspaces) ---
+.worktrees/
+
 # --- Bun ---
 .bun/
 
