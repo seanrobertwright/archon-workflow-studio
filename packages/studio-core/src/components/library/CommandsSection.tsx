@@ -55,6 +55,7 @@ export function CommandsSection({ cwd }: CommandsSectionProps) {
                     encodeLibraryDrag({
                       kind: 'variant',
                       variantId: 'command',
+                      idHintOverride: `run-${slugify(cmd.name)}`,
                       prefill: { command: cmd.name },
                     }),
                   );

@@ -10,6 +10,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import './Canvas.css';
 
 import { useBuilderStore } from '../store/builder-store';
 import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
@@ -65,6 +66,14 @@ export function Canvas() {
 
   const idsKey = useMemo(() => storeNodes.map((n) => n.id).join(' '), [storeNodes]);
 
+  // Re-hydrate the in-flight rfNodes whenever:
+  //   - the set of node ids changes (load, add, delete), OR
+  //   - the positions map is replaced (e.g., Reset Layout clears it and the
+  //     seed effect below repopulates with fresh dagre output).
+  // Note: drag-end ALSO produces a new positions map (Map identity churns),
+  // but `applyNodeChanges` has already updated rfNodes with the same final
+  // position, so the rehydrate is idempotent — costs a redundant React state
+  // write, no visual disruption.
   useEffect(() => {
     setRfNodes(
       derivedNodes.map((n) => ({
@@ -72,35 +81,34 @@ export function Canvas() {
         position: positions.positions.get(n.id) ?? n.position,
       })),
     );
-    // We only re-hydrate when the set of ids changes; updates to an existing
-    // node's position go through applyNodeChanges instead.
-  }, [idsKey]);
+  }, [idsKey, positions.positions]);
 
   // Seed positions for any node id NOT already in the map.
-  // Phase-3 hardening (Task 47): on first load (positions empty), run dagre on
-  // the whole graph. On a subsequent partial-miss, seed at origin so we don't
-  // clobber existing persisted layouts. Two callers reach this branch:
-  //   - Drag-drop (Canvas onDrop): sets the position itself BEFORE this effect
-  //     runs, so the new id is never "missing" here.
-  //   - Click-to-add (NodeLibrary onActivate): does not set a position, so the
-  //     new node lands at origin by design — per plan, click is the keyboard-
-  //     friendly fallback and the user drags the new node into place. The
-  //     stacking-at-origin behavior on rapid sequential clicks is acceptable v1.
+  // Branches:
+  //   1. missing.length === 0 → no-op (every node already has a position).
+  //   2. positions empty (first-load OR Reset Layout) → full dagre on whole graph.
+  //   3. partial-miss (some positions persisted) → seed missing ids at origin.
+  // Listening on `positions.positions` (not just idsKey) is what makes the
+  // Reset Layout button visible: Reset clears the map, this effect re-fires
+  // with branch 2, dagre re-runs, the rehydrate effect above propagates the
+  // new positions into rfNodes.
   useEffect(() => {
     const missing = derivedNodes.filter((n) => !positions.positions.has(n.id));
     if (missing.length === 0) return;
     if (positions.positions.size === 0) {
-      // First-load: full dagre over the whole graph.
       const laid = layoutWithDagre(derivedNodes, rfEdges);
       const newEntries: [string, { x: number; y: number }][] = derivedNodes
         .map((n) => [n.id, laid.get(n.id)] as const)
         .filter((entry): entry is [string, { x: number; y: number }] => entry[1] !== undefined);
       if (newEntries.length > 0) positions.setMany(newEntries);
     } else {
-      // Some positions already persisted; only seed missing ids at origin.
+      // Drag-drop sets its own position before this effect runs so it never
+      // hits this branch. Click-to-add (NodeLibrary onActivate) does land
+      // here — by design, click is the keyboard-friendly fallback and the
+      // user drags the new node into place.
       positions.setMany(missing.map((n) => [n.id, { x: 0, y: 0 }]));
     }
-  }, [idsKey]);
+  }, [idsKey, positions.positions]);
 
   // Persistence hook — drag-end only. Pure factory tested in canvasHandlers.spec.ts.
   const persistOnNodesChange = useMemo(() => makeOnNodesChange(positions), [positions]);
@@ -133,7 +141,10 @@ export function Canvas() {
       e.preventDefault();
       const flowPos = reactFlow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
       if (payload.kind === 'variant') {
-        const id = addNodeFromVariant(payload.variantId, { dataPatch: payload.prefill });
+        const id = addNodeFromVariant(payload.variantId, {
+          idHintOverride: payload.idHintOverride,
+          dataPatch: payload.prefill,
+        });
         positions.setPosition(id, flowPos);
       }
       if (payload.kind === 'snippet') {

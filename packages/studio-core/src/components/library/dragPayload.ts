@@ -3,7 +3,14 @@ import type { VariantId } from '../../nodes/registry';
 export const LIBRARY_DRAG_MIME = 'application/x-archon-studio';
 
 export type LibraryDragPayload =
-  | { kind: 'variant'; variantId: VariantId; prefill?: Record<string, unknown> }
+  | {
+      kind: 'variant';
+      variantId: VariantId;
+      prefill?: Record<string, unknown>;
+      /** Optional id-hint override; CommandsSection drag uses `run-<slug>` to
+       *  match the click handler's id semantics (see Task 48). */
+      idHintOverride?: string;
+    }
   | { kind: 'snippet'; category: 'starters' | 'patterns'; name: string };
 
 const VARIANT_IDS = new Set<VariantId>([
@@ -38,6 +45,9 @@ export function decodeLibraryDrag(raw: string): LibraryDragPayload | null {
     const out: LibraryDragPayload = { kind: 'variant', variantId: o.variantId as VariantId };
     if (o.prefill && typeof o.prefill === 'object') {
       out.prefill = o.prefill as Record<string, unknown>;
+    }
+    if (typeof o.idHintOverride === 'string') {
+      out.idHintOverride = o.idHintOverride;
     }
     return out;
   }
