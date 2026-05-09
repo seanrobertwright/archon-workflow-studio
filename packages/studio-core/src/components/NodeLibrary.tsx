@@ -3,6 +3,7 @@ import { defaultRegistry } from '../nodes/default-registry';
 import { useBuilderStore } from '../store/builder-store';
 import { VariantTile } from './library/VariantTile';
 import { CommandsSection } from './library/CommandsSection';
+import { SnippetsSection } from './library/SnippetsSection';
 import { LIBRARY_DRAG_MIME, encodeLibraryDrag } from './library/dragPayload';
 import styles from './NodeLibrary.module.css';
 
@@ -38,7 +39,7 @@ export function NodeLibrary({ cwd }: NodeLibraryProps) {
         </ul>
       </section>
       <CommandsSection cwd={cwd} />
-      {/* Snippets section — Task 51 */}
+      <SnippetsSection />
     </aside>
   );
 }

@@ -18,6 +18,8 @@ import { usePositionContext } from '../hooks/PositionContext';
 import { defaultRegistry } from '../nodes/default-registry';
 import { VARIANT_IDS } from '../nodes/registry';
 import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from './library/dragPayload';
+import { loadSnippet } from '@archon-studio/fixtures';
+import { insertSnippet } from '../snippets/insertSnippet';
 import {
   makeOnNodesChange,
   makeOnConnect,
@@ -134,7 +136,13 @@ export function Canvas() {
         const id = addNodeFromVariant(payload.variantId, { dataPatch: payload.prefill });
         positions.setPosition(id, flowPos);
       }
-      // payload.kind === 'snippet' handled in Task 51 (insertSnippet wiring).
+      if (payload.kind === 'snippet') {
+        insertSnippet({
+          yaml: loadSnippet(payload.category, payload.name),
+          anchorPosition: flowPos,
+          setPosition: positions.setPosition,
+        });
+      }
     },
     [reactFlow, addNodeFromVariant, positions],
   );

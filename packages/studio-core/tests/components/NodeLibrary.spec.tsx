@@ -5,9 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { NodeLibrary } from '../../src/components/NodeLibrary';
 import { ApiClientProvider } from '../../src/api/ApiClientProvider';
+import { PositionProvider } from '../../src/hooks/PositionContext';
 import { useBuilderStore } from '../../src/store/builder-store';
 import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from '../../src/components/library/dragPayload';
 import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
+import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -31,13 +33,22 @@ const stubClient: WorkflowApiClient = {
   validateWorkflow: async () => ({ valid: true }),
 };
 
+const stubPersistence: UsePositionPersistence = {
+  positions: new Map(),
+  setPosition: () => undefined,
+  setMany: () => undefined,
+  reset: () => undefined,
+};
+
 function renderLibrary() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <ApiClientProvider client={stubClient}>
         <ReactFlowProvider>
-          <NodeLibrary cwd="/abs/path/test-cwd" />
+          <PositionProvider value={stubPersistence}>
+            <NodeLibrary cwd="/abs/path/test-cwd" />
+          </PositionProvider>
         </ReactFlowProvider>
       </ApiClientProvider>
     </QueryClientProvider>,
