@@ -3404,3 +3404,2017 @@ git push origin phase-1
 - [ ] `toWorkflowDefinition` exporter (Task 29)
 - [ ] Killer round-trip test upgraded; passes for every fixture (Task 30)
 - [ ] All local + remote CI green; `phase-1` tag pushed (Task 31)
+
+---
+
+## Chunk 4: Phase 2 — Canvas, DagNode, position persistence, WorkflowBuilder shell, standalone smoke
+
+**Goal of this chunk:** Stand up the visible editor on top of the Phase 1 data spine. Land the React Flow canvas with Archon-equivalent dagre auto-layout, a single Phase-2 `DagNodeComponent` (variant color stripe + single top/bottom handle pair), the localStorage-backed position-persistence hook, the `WorkflowBuilder` layout shell (toolbar slot + library slot + canvas + inspector slot — last two are stubs), a stub `ArchonApiClient` that returns the bundled smoke fixture, and the wiring in `apps/standalone` that mounts `WorkflowBuilder` against that stub. After Phase 2, `bun --filter='@archon-studio/standalone' run dev` opens a browser tab showing the smoke fixture rendered as a real graph; the user can drag nodes, connect/disconnect by edge, delete, and reload — positions persist on the same browser. No inspector, no library palette, no validation, no save: those land in Phases 3–9.
+
+**Definition of done for Phase 2:**
+
+- `packages/studio-core/src/components/canvas/deriveFlow.ts` — pure function `(nodes, positions) → { rfNodes, rfEdges }` with a `mode: 'whenIsDashed'` edge-style decision baked in. Unit-tested.
+- `packages/studio-core/src/hooks/useDagre.ts` — pure layout helper matching Archon's `packages/web/src/lib/dag-layout.ts` settings (`rankdir: 'TB'`, `ranksep: 80`, `nodesep: 40`, node 180×80, smoothstep). Unit-tested.
+- `packages/studio-core/src/hooks/usePositionPersistence.ts` — localStorage-backed map of node id → position keyed by `<archonUrl>::<cwd>::<workflowName>`, with debounced writes and a `reset()` for the toolbar's "Reset layout" action. Unit-tested via a JSDOM-style happy-dom storage shim.
+- `packages/studio-core/src/components/DagNodeComponent.tsx` — single Phase-2 unified node renderer (variant color stripe via `--node-<variant>` token, top + bottom Handle, id label, variant tag chip). Per-variant Renderer split is Phase 3 — the registry's `Renderer` field stays unset for now and the canvas registers exactly one `nodeType: 'dag'`. Component-tested with `@testing-library/react`.
+- `packages/studio-core/src/components/Canvas.tsx` — React Flow integration that consumes `deriveFlow` + `useDagre` + `usePositionPersistence`, wires `onConnect`/`onNodesDelete`/`onEdgesDelete`/`onNodesChange` back to the Zustand store actions from Phase 1. Component-tested for: store-driven render, drag persists, connect/disconnect mutates store, delete removes node + cleans `depends_on`.
+- `packages/studio-core/src/components/Toolbar.tsx` — Phase-2 skeleton showing the workflow name (read-only display) and a "Reset layout" button that drops persisted positions and triggers re-layout. Phase 8 fills in the rest (undo/redo, validate, save, theme picker, codebase pill).
+- `packages/studio-core/src/components/WorkflowBuilder.tsx` — top-level layout shell. Mounts `<ApiClientProvider>` (passed in via prop) + `<ThemeProvider>` (preset prop) + `<QueryClientProvider>` (own QueryClient) + `<StudioErrorBoundary>` (Phase 0 skeleton). Renders a CSS-grid layout: top row = `<Toolbar>`; left column = `NodeLibrary` slot (empty `<aside>` placeholder until Phase 3); center = `<Canvas>`; right column = `NodeInspector` slot (empty `<aside>` placeholder until Phase 4); bottom = `ValidationPanel` slot (empty until Phase 6). Component-tested for: smoke render with a fixture-backed store; reset-layout button calls the hook's `reset()`.
+- `packages/studio-core/src/index.ts` re-exports `WorkflowBuilder` and the `WorkflowBuilderProps` type. (Internal pieces — `Canvas`, `Toolbar`, `DagNodeComponent`, hooks — stay private.)
+- `packages/studio-api-archon/src/StubArchonApiClient.ts` — a `WorkflowApiClient` impl that resolves `getWorkflow(name, _cwd)` from `loadRoundTripFixture(name)` (from `@archon-studio/fixtures`), returns a canned `[{ workflow, source: 'bundled' }]` for `listWorkflows`, `null` for `listCodebases`, `[]` for `listCommands`/`listProviders`, no-ops `saveWorkflow` (echoes the input), and `{ valid: true }` for `validateWorkflow`. Its purpose is to let the standalone shell open a real fixture without an Archon process. Real impls land in Phase 9.
+- `apps/standalone/src/App.tsx` mounts `<WorkflowBuilder>` against `StubArchonApiClient`, hydrates `useBuilderStore` from the smoke fixture by calling `client.getWorkflow('_smoke-pi-all-nodes', '/dev')` → `fromWorkflowDefinition` → `loadWorkflow`, and renders full-viewport. Routing is intentionally not added in Phase 2 — `react-router-dom` arrives in Phase 9 with `/connect`, `/workflows`, `/builder/:name`.
+- `apps/standalone/src/index.css` extended so the studio fills the viewport (the existing `html,body,#root { height: 100% }` rule is enough; verify the React Flow container inherits height correctly).
+- `bun --filter='*' run build`, `bun --filter='*' run test`, and `bun --filter='@archon-studio/standalone' run dev` are all green; the dev server renders the smoke fixture as a graph; CI green.
+- `phase-2` annotated tag is pushed.
+
+**Reference skills if you get stuck:** `@lril-superpowers:test-driven-development`, `@lril-superpowers:verification-before-completion`, `@lril-superpowers:systematic-debugging`. The `agent-browser` or `browse` skill is useful for the manual verification step (Task 41) — open the dev URL, take a screenshot, confirm the graph layout matches Archon visually.
+
+**Big-picture data flow (the pieces this chunk delivers):**
+
+```
+fixture YAML ──parse──▶ JSON ──fromWorkflowDefinition──▶ store {workflow, nodes}
+                                                                  │
+                                                                  ▼
+                                              deriveFlow(nodes, positionMap)
+                                                                  │
+                                                       ┌──────────┴──────────┐
+                                                       ▼                     ▼
+                                                  rfNodes (no pos       rfEdges
+                                                  for unset ids)            │
+                                                       │                    │
+                                                       ▼                    │
+                                          useDagre fills missing positions  │
+                                                       │                    │
+                                                       └─────────┬──────────┘
+                                                                 ▼
+                                                       <ReactFlow nodes/edges/>
+                                                                 │
+                                                                 ▼
+                                                onNodesChange → usePositionPersistence
+                                                                 │     (debounced
+                                                                 │      localStorage write)
+                                                                 ▼
+                                                onConnect/onNodesDelete/onEdgesDelete
+                                                          → store.connect/disconnect/deleteNodes
+                                                                 │
+                                                                 ▼
+                                                        store update → re-render
+```
+
+**Phase-2 invariant (worth re-stating because it's easy to violate):** React Flow holds positions; the Zustand store does **not**. Any code that wants to know "where is node X on screen" reads from React Flow internal state (or the persistence map). Any code that wants to mutate the workflow goes through store actions. If a future task is tempted to add `position` to `BuilderNode`, that's a sign the spec drift has begun — push back; the workflow JSON must stay positionally pure.
+
+---
+
+### Task 32: `deriveFlow` — pure store-to-React-Flow projection
+
+**Files:**
+- Create: `packages/studio-core/src/components/canvas/deriveFlow.ts`
+- Create: `packages/studio-core/tests/components/canvas/deriveFlow.spec.ts`
+
+This is the pure boundary between our Zustand world and React Flow's world. Given store nodes and a position map, return `{ rfNodes, rfEdges }`. Edges are derived from each node's `base.depends_on`; an edge whose **target** has a `base.when` string gets the dashed-purple style (mirrors Archon's `WorkflowCanvas.tsx:121-135`). Keep this function dependency-free of React or `@xyflow/react` runtime — only its types.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `packages/studio-core/tests/components/canvas/deriveFlow.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { deriveFlow } from '../../../src/components/canvas/deriveFlow';
+import type { BuilderNode } from '../../../src/nodes/shared/types';
+
+const node = (over: Partial<BuilderNode>): BuilderNode => ({
+  id: 'x',
+  variant: 'command',
+  data: {},
+  base: {},
+  unknown: {},
+  ...over,
+});
+
+describe('deriveFlow', () => {
+  it('emits one rfNode per store node, all with type "dag"', () => {
+    const { rfNodes } = deriveFlow(
+      [node({ id: 'a' }), node({ id: 'b' })],
+      new Map(),
+    );
+    expect(rfNodes).toHaveLength(2);
+    expect(rfNodes.every((n) => n.type === 'dag')).toBe(true);
+    expect(rfNodes.map((n) => n.id)).toEqual(['a', 'b']);
+  });
+
+  it('uses position map when present, defaults to {x:0,y:0} otherwise', () => {
+    const { rfNodes } = deriveFlow(
+      [node({ id: 'a' }), node({ id: 'b' })],
+      new Map([['a', { x: 100, y: 200 }]]),
+    );
+    expect(rfNodes.find((n) => n.id === 'a')?.position).toEqual({ x: 100, y: 200 });
+    expect(rfNodes.find((n) => n.id === 'b')?.position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('emits one edge per depends_on entry with id "<source>-><target>"', () => {
+    const { rfEdges } = deriveFlow(
+      [
+        node({ id: 'a' }),
+        node({ id: 'b', base: { depends_on: ['a'] } }),
+        node({ id: 'c', base: { depends_on: ['a', 'b'] } }),
+      ],
+      new Map(),
+    );
+    expect(rfEdges.map((e) => e.id).sort()).toEqual(['a->b', 'a->c', 'b->c']);
+    expect(rfEdges.every((e) => e.type === 'smoothstep')).toBe(true);
+  });
+
+  it('marks edges as dashed-purple when the TARGET has a when: string', () => {
+    const { rfEdges } = deriveFlow(
+      [
+        node({ id: 'a' }),
+        node({ id: 'b', base: { depends_on: ['a'], when: "$a.output == 'go'" } }),
+      ],
+      new Map(),
+    );
+    const e = rfEdges.find((e) => e.id === 'a->b')!;
+    expect(e.style?.strokeDasharray).toBeDefined();
+    expect(e.style?.stroke).toBe('var(--studio-when)');
+  });
+
+  it('passes variant id through on rfNode.data so DagNodeComponent can read it', () => {
+    const { rfNodes } = deriveFlow([node({ id: 'a', variant: 'loop' })], new Map());
+    expect(rfNodes[0].data).toMatchObject({ variant: 'loop', storeId: 'a' });
+  });
+
+  it('skips depends_on entries whose source is missing (defensive)', () => {
+    const { rfEdges } = deriveFlow(
+      [node({ id: 'b', base: { depends_on: ['ghost'] } })],
+      new Map(),
+    );
+    expect(rfEdges).toHaveLength(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect compile/runtime failure**
+
+Run: `bun --filter='@archon-studio/core' test deriveFlow`
+Expected: module-not-found for `deriveFlow`.
+
+- [ ] **Step 3: Implement `deriveFlow`**
+
+Create `packages/studio-core/src/components/canvas/deriveFlow.ts`:
+
+```ts
+import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react';
+import type { BuilderNode } from '../../nodes/shared/types';
+import type { VariantId } from '../../nodes/registry';
+
+export interface DagNodeData extends Record<string, unknown> {
+  variant: VariantId;
+  storeId: string;
+  /** Read by DagNodeComponent for label rendering. */
+  label: string;
+}
+
+export interface DeriveFlowResult {
+  rfNodes: RFNode<DagNodeData>[];
+  rfEdges: RFEdge[];
+}
+
+export function deriveFlow(
+  storeNodes: readonly BuilderNode[],
+  positions: ReadonlyMap<string, { x: number; y: number }>,
+): DeriveFlowResult {
+  const knownIds = new Set(storeNodes.map((n) => n.id));
+
+  const rfNodes: RFNode<DagNodeData>[] = storeNodes.map((n) => ({
+    id: n.id,
+    type: 'dag',
+    position: positions.get(n.id) ?? { x: 0, y: 0 },
+    data: { variant: n.variant, storeId: n.id, label: n.id },
+  }));
+
+  const rfEdges: RFEdge[] = [];
+  for (const target of storeNodes) {
+    const dep = target.base.depends_on as string[] | undefined;
+    if (!dep) continue;
+    const targetHasWhen = typeof target.base.when === 'string';
+    for (const source of dep) {
+      if (!knownIds.has(source)) continue; // defensive
+      rfEdges.push({
+        id: `${source}->${target.id}`,
+        source,
+        target: target.id,
+        type: 'smoothstep',
+        style: targetHasWhen
+          ? { stroke: 'var(--studio-when)', strokeDasharray: '6 4' }
+          : { stroke: 'var(--studio-muted)' },
+      });
+    }
+  }
+
+  return { rfNodes, rfEdges };
+}
+```
+
+- [ ] **Step 4: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test deriveFlow`
+Expected: 6 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/studio-core/src/components/canvas/deriveFlow.ts \
+        packages/studio-core/tests/components/canvas/deriveFlow.spec.ts
+git commit -m "feat(canvas): deriveFlow — pure store→React-Flow projection with when-aware edge styling"
+```
+
+---
+
+### Task 33: `useDagre` — Archon-equivalent layout helper
+
+**Files:**
+- Create: `packages/studio-core/src/hooks/useDagre.ts`
+- Create: `packages/studio-core/tests/hooks/useDagre.spec.ts`
+
+`useDagre` is **not** a React hook in the strict sense — it's exported as a pure function `layoutWithDagre(rfNodes, rfEdges) → Map<id, {x,y}>` plus a thin React wrapper `useDagre(rfNodes, rfEdges)` that memoises. The pure function is what we test; the wrapper gets coverage incidentally through Canvas tests. Settings are pinned to **Archon's exact values** at the SHA in `.archon-source-pin`: `rankdir: 'TB'`, `ranksep: 80`, `nodesep: 40`, node 180×80. If Archon's layout settings change upstream, that's a deliberate decision — schema-drift CI doesn't watch this file, so any rev of the pin should re-confirm by inspection (note this in the Phase 10 drift checklist).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `packages/studio-core/tests/hooks/useDagre.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { layoutWithDagre } from '../../src/hooks/useDagre';
+
+describe('layoutWithDagre', () => {
+  it('returns one position per node id', () => {
+    const positions = layoutWithDagre(
+      [
+        { id: 'a', position: { x: 0, y: 0 } },
+        { id: 'b', position: { x: 0, y: 0 } },
+      ],
+      [{ id: 'a->b', source: 'a', target: 'b' }],
+    );
+    expect(positions.size).toBe(2);
+    expect(positions.has('a')).toBe(true);
+    expect(positions.has('b')).toBe(true);
+  });
+
+  it('lays out top-to-bottom: parent above child given rankdir TB', () => {
+    const positions = layoutWithDagre(
+      [
+        { id: 'parent', position: { x: 0, y: 0 } },
+        { id: 'child', position: { x: 0, y: 0 } },
+      ],
+      [{ id: 'p->c', source: 'parent', target: 'child' }],
+    );
+    expect(positions.get('parent')!.y).toBeLessThan(positions.get('child')!.y);
+  });
+
+  it('separates siblings horizontally given nodesep 40', () => {
+    const positions = layoutWithDagre(
+      [
+        { id: 'root', position: { x: 0, y: 0 } },
+        { id: 'left', position: { x: 0, y: 0 } },
+        { id: 'right', position: { x: 0, y: 0 } },
+      ],
+      [
+        { id: 'r->l', source: 'root', target: 'left' },
+        { id: 'r->r', source: 'root', target: 'right' },
+      ],
+    );
+    expect(positions.get('left')!.x).not.toEqual(positions.get('right')!.x);
+  });
+
+  it('handles disconnected nodes (no edges)', () => {
+    const positions = layoutWithDagre(
+      [
+        { id: 'a', position: { x: 0, y: 0 } },
+        { id: 'b', position: { x: 0, y: 0 } },
+      ],
+      [],
+    );
+    expect(positions.size).toBe(2);
+  });
+
+  it('returns empty map for empty input', () => {
+    expect(layoutWithDagre([], []).size).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect compile failure**
+
+Run: `bun --filter='@archon-studio/core' test useDagre`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement**
+
+Create `packages/studio-core/src/hooks/useDagre.ts`:
+
+```ts
+import { useMemo } from 'react';
+import dagre from '@dagrejs/dagre';
+
+/** Mirrors Archon's `packages/web/src/lib/dag-layout.ts` settings at the pinned SHA. */
+const DAGRE_OPTIONS = { rankdir: 'TB', ranksep: 80, nodesep: 40 } as const;
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 80;
+
+interface MinimalRFNode {
+  id: string;
+  position: { x: number; y: number };
+}
+interface MinimalRFEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+/** Pure: compute dagre positions for the given graph. Caller decides what to do with them. */
+export function layoutWithDagre(
+  nodes: readonly MinimalRFNode[],
+  edges: readonly MinimalRFEdge[],
+): Map<string, { x: number; y: number }> {
+  const result = new Map<string, { x: number; y: number }>();
+  if (nodes.length === 0) return result;
+
+  const g = new dagre.graphlib.Graph();
+  g.setGraph(DAGRE_OPTIONS);
+  g.setDefaultEdgeLabel(() => ({}));
+
+  for (const n of nodes) g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  for (const e of edges) g.setEdge(e.source, e.target);
+
+  try {
+    dagre.layout(g);
+  } catch (err) {
+    // Cycle or other dagre failure — return identity positions; Canvas surfaces a warning.
+    // (Phase 6's cycle detector is the authoritative gatekeeper; this is just a soft fallback.)
+    // eslint-disable-next-line no-console
+    console.error('[useDagre] layout failed, using identity positions:', err);
+    for (const n of nodes) result.set(n.id, { x: 0, y: 0 });
+    return result;
+  }
+
+  for (const n of nodes) {
+    const laid = g.node(n.id);
+    if (!laid) continue;
+    // Dagre returns CENTER positions; React Flow expects TOP-LEFT.
+    result.set(n.id, { x: laid.x - NODE_WIDTH / 2, y: laid.y - NODE_HEIGHT / 2 });
+  }
+  return result;
+}
+
+/** Memoised React wrapper. Re-runs only when the input identity changes. */
+export function useDagre<N extends MinimalRFNode, E extends MinimalRFEdge>(
+  nodes: readonly N[],
+  edges: readonly E[],
+): Map<string, { x: number; y: number }> {
+  return useMemo(() => layoutWithDagre(nodes, edges), [nodes, edges]);
+}
+```
+
+- [ ] **Step 4: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test useDagre`
+Expected: 5 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/studio-core/src/hooks/useDagre.ts \
+        packages/studio-core/tests/hooks/useDagre.spec.ts
+git commit -m "feat(canvas): layoutWithDagre + useDagre — Archon-equivalent rankdir TB / 80 / 40 layout"
+```
+
+---
+
+### Task 34: `usePositionPersistence` — localStorage-backed position map
+
+**Files:**
+- Create: `packages/studio-core/src/hooks/usePositionPersistence.ts`
+- Create: `packages/studio-core/tests/hooks/usePositionPersistence.spec.ts`
+
+The contract: given a composite key `<archonUrl>::<cwd>::<workflowName>`, expose a `positions: Map<id, {x,y}>`, a `setPosition(id, pos)` action that writes through (debounced 200ms), and a `reset()` that clears the persisted entry. localStorage is the only state — re-reading the key on remount yields the same map. Phase 9 supplies real values for `archonUrl`/`cwd`; Phase 2 uses `__dev__::__dev__::<workflowName>` from the standalone wiring.
+
+**Why debounced:** React Flow fires `onNodesChange` at every animation frame during a drag — we'd thrash the synchronous localStorage write otherwise. Debounce-to-trailing-edge keeps the final drop position. We must also flush on unmount or page hide so a fast click→drag→close doesn't lose the move.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `packages/studio-core/tests/hooks/usePositionPersistence.spec.ts`:
+
+```ts
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { renderHook, act } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import {
+  loadPersistedPositions,
+  persistPositions,
+  positionStorageKey,
+} from '../../src/hooks/usePositionPersistence';
+
+beforeEach(() => {
+  if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+  globalThis.localStorage.clear();
+});
+
+describe('positionStorageKey', () => {
+  it('joins archonUrl :: cwd :: workflowName', () => {
+    expect(positionStorageKey('http://localhost:3737', '/repos/foo', 'wf-1')).toBe(
+      'studio:positions:http://localhost:3737::/repos/foo::wf-1',
+    );
+  });
+});
+
+describe('loadPersistedPositions', () => {
+  it('returns empty map when nothing stored', () => {
+    expect(loadPersistedPositions('a', 'b', 'c').size).toBe(0);
+  });
+
+  it('round-trips a positions map', () => {
+    persistPositions(
+      'a',
+      'b',
+      'c',
+      new Map([
+        ['n1', { x: 100, y: 200 }],
+        ['n2', { x: 300, y: 400 }],
+      ]),
+    );
+    const got = loadPersistedPositions('a', 'b', 'c');
+    expect(got.get('n1')).toEqual({ x: 100, y: 200 });
+    expect(got.get('n2')).toEqual({ x: 300, y: 400 });
+  });
+
+  it('returns empty map when stored payload is corrupt JSON', () => {
+    globalThis.localStorage.setItem(positionStorageKey('a', 'b', 'c'), 'NOT_JSON');
+    expect(loadPersistedPositions('a', 'b', 'c').size).toBe(0);
+  });
+});
+
+describe('usePositionPersistence (hook)', () => {
+  it('does not persist synchronously when setPosition is called', async () => {
+    const { usePositionPersistence } = await import('../../src/hooks/usePositionPersistence');
+    const { result, unmount } = renderHook(() => usePositionPersistence('u', 'c', 'wf'));
+    act(() => {
+      result.current.setPosition('n1', { x: 50, y: 60 });
+    });
+    // setPosition updates in-memory state immediately…
+    expect(result.current.positions.get('n1')).toEqual({ x: 50, y: 60 });
+    // …but localStorage is still empty (debounced).
+    expect(globalThis.localStorage.getItem(positionStorageKey('u', 'c', 'wf'))).toBeNull();
+    unmount();
+  });
+
+  it('persists after the debounce window elapses', async () => {
+    const { usePositionPersistence } = await import('../../src/hooks/usePositionPersistence');
+    const { result, unmount } = renderHook(() => usePositionPersistence('u', 'c', 'wf'));
+    act(() => {
+      result.current.setPosition('n1', { x: 50, y: 60 });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250)); // > 200ms debounce
+    const raw = globalThis.localStorage.getItem(positionStorageKey('u', 'c', 'wf'));
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!)).toEqual({ n1: { x: 50, y: 60 } });
+    unmount();
+  });
+
+  it('flushes pending writes on unmount before the debounce expires', async () => {
+    const { usePositionPersistence } = await import('../../src/hooks/usePositionPersistence');
+    const { result, unmount } = renderHook(() => usePositionPersistence('u', 'c', 'wf'));
+    act(() => {
+      result.current.setPosition('n1', { x: 11, y: 22 });
+    });
+    expect(globalThis.localStorage.getItem(positionStorageKey('u', 'c', 'wf'))).toBeNull();
+    unmount();
+    // Unmount cleanup synchronously calls flush().
+    const raw = globalThis.localStorage.getItem(positionStorageKey('u', 'c', 'wf'));
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!)).toEqual({ n1: { x: 11, y: 22 } });
+  });
+
+  it('reset() clears state and removes the localStorage entry', async () => {
+    const { usePositionPersistence } = await import('../../src/hooks/usePositionPersistence');
+    persistPositions('u', 'c', 'wf', new Map([['x', { x: 1, y: 2 }]]));
+    const { result, unmount } = renderHook(() => usePositionPersistence('u', 'c', 'wf'));
+    expect(result.current.positions.get('x')).toEqual({ x: 1, y: 2 });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.positions.size).toBe(0);
+    expect(globalThis.localStorage.getItem(positionStorageKey('u', 'c', 'wf'))).toBeNull();
+    unmount();
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test usePositionPersistence`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement**
+
+Create `packages/studio-core/src/hooks/usePositionPersistence.ts`:
+
+```ts
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+const STORAGE_PREFIX = 'studio:positions:';
+const DEBOUNCE_MS = 200;
+
+export function positionStorageKey(archonUrl: string, cwd: string, workflowName: string): string {
+  return `${STORAGE_PREFIX}${archonUrl}::${cwd}::${workflowName}`;
+}
+
+export function loadPersistedPositions(
+  archonUrl: string,
+  cwd: string,
+  workflowName: string,
+): Map<string, { x: number; y: number }> {
+  const map = new Map<string, { x: number; y: number }>();
+  try {
+    const raw = globalThis.localStorage?.getItem(positionStorageKey(archonUrl, cwd, workflowName));
+    if (!raw) return map;
+    const parsed = JSON.parse(raw) as Record<string, { x: number; y: number }>;
+    for (const [id, pos] of Object.entries(parsed)) {
+      if (typeof pos?.x === 'number' && typeof pos?.y === 'number') map.set(id, pos);
+    }
+  } catch {
+    // corrupt payload — ignore, treat as empty
+  }
+  return map;
+}
+
+export function persistPositions(
+  archonUrl: string,
+  cwd: string,
+  workflowName: string,
+  positions: ReadonlyMap<string, { x: number; y: number }>,
+): void {
+  const obj: Record<string, { x: number; y: number }> = {};
+  for (const [id, pos] of positions) obj[id] = pos;
+  try {
+    globalThis.localStorage?.setItem(
+      positionStorageKey(archonUrl, cwd, workflowName),
+      JSON.stringify(obj),
+    );
+  } catch {
+    // quota / privacy mode — fail silently; positions are non-critical
+  }
+}
+
+export interface UsePositionPersistence {
+  positions: Map<string, { x: number; y: number }>;
+  setPosition: (id: string, pos: { x: number; y: number }) => void;
+  setMany: (entries: Iterable<[string, { x: number; y: number }]>) => void;
+  reset: () => void;
+}
+
+export function usePositionPersistence(
+  archonUrl: string,
+  cwd: string,
+  workflowName: string,
+): UsePositionPersistence {
+  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(() =>
+    loadPersistedPositions(archonUrl, cwd, workflowName),
+  );
+
+  // Re-hydrate when the key changes (workflow switch).
+  useEffect(() => {
+    setPositions(loadPersistedPositions(archonUrl, cwd, workflowName));
+  }, [archonUrl, cwd, workflowName]);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<Map<string, { x: number; y: number }> | null>(null);
+
+  const flush = useCallback(() => {
+    if (pendingRef.current) {
+      persistPositions(archonUrl, cwd, workflowName, pendingRef.current);
+      pendingRef.current = null;
+    }
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, [archonUrl, cwd, workflowName]);
+
+  // Flush on unmount and on tab hide so a fast drag→close doesn't lose the move.
+  useEffect(() => {
+    const onHide = () => flush();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onHide);
+      flush();
+    };
+  }, [flush]);
+
+  const schedule = useCallback(
+    (next: Map<string, { x: number; y: number }>) => {
+      pendingRef.current = next;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        if (pendingRef.current) persistPositions(archonUrl, cwd, workflowName, pendingRef.current);
+        pendingRef.current = null;
+        debounceRef.current = null;
+      }, DEBOUNCE_MS);
+    },
+    [archonUrl, cwd, workflowName],
+  );
+
+  const setPosition = useCallback(
+    (id: string, pos: { x: number; y: number }) => {
+      setPositions((prev) => {
+        const next = new Map(prev);
+        next.set(id, pos);
+        schedule(next);
+        return next;
+      });
+    },
+    [schedule],
+  );
+
+  const setMany = useCallback(
+    (entries: Iterable<[string, { x: number; y: number }]>) => {
+      setPositions((prev) => {
+        const next = new Map(prev);
+        for (const [id, pos] of entries) next.set(id, pos);
+        schedule(next);
+        return next;
+      });
+    },
+    [schedule],
+  );
+
+  const reset = useCallback(() => {
+    pendingRef.current = null;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    try {
+      globalThis.localStorage?.removeItem(positionStorageKey(archonUrl, cwd, workflowName));
+    } catch {
+      // ignore
+    }
+    setPositions(new Map());
+  }, [archonUrl, cwd, workflowName]);
+
+  return useMemo(
+    () => ({ positions, setPosition, setMany, reset }),
+    [positions, setPosition, setMany, reset],
+  );
+}
+```
+
+- [ ] **Step 4: Add `@happy-dom/global-registrator` if missing**
+
+Run: `cd packages/studio-core && bun add -d @happy-dom/global-registrator`
+Expected: install succeeds; `package.json` records the new devDep.
+
+- [ ] **Step 5: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test usePositionPersistence`
+Expected: 5 passing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-core/src/hooks/usePositionPersistence.ts \
+        packages/studio-core/tests/hooks/usePositionPersistence.spec.ts \
+        packages/studio-core/package.json bun.lock
+git commit -m "feat(canvas): usePositionPersistence — localStorage-backed positions, debounced + flush-on-hide"
+```
+
+---
+
+### Task 35: `DagNodeComponent` — Phase-2 unified node renderer
+
+**Files:**
+- Create: `packages/studio-core/src/components/DagNodeComponent.tsx`
+- Create: `packages/studio-core/src/components/DagNodeComponent.module.css`
+- Create: `packages/studio-core/tests/components/DagNodeComponent.spec.tsx`
+
+This is the **single** node renderer for Phase 2. Per-variant Renderers split out in Phase 3. The Phase-2 component reads `data.variant` and `data.label` from `deriveFlow`'s `DagNodeData`, draws a 180×80 card with a 4-px-wide left stripe in `var(--node-<variant>)`, the id label in the body, and a small variant tag in the corner. Two `<Handle>` instances — one `Position.Top` (target), one `Position.Bottom` (source). Single handle pair only — Archon's web builder uses the same convention. Selection/hover styling reads from React Flow's `selected` prop.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `packages/studio-core/tests/components/DagNodeComponent.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen } from '@testing-library/react';
+import { ReactFlowProvider } from '@xyflow/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { DagNodeComponent } from '../../src/components/DagNodeComponent';
+
+beforeAll(() => {
+  if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+});
+
+const baseProps = {
+  id: 'classify',
+  type: 'dag',
+  selected: false,
+  dragging: false,
+  isConnectable: true,
+  xPos: 0,
+  yPos: 0,
+  zIndex: 0,
+};
+
+describe('DagNodeComponent', () => {
+  it('renders the id label', () => {
+    render(
+      <ReactFlowProvider>
+        <DagNodeComponent
+          {...(baseProps as any)}
+          data={{ variant: 'command', storeId: 'classify', label: 'classify' }}
+        />
+      </ReactFlowProvider>,
+    );
+    expect(screen.getByText('classify')).toBeDefined();
+  });
+
+  it('shows the variant tag', () => {
+    render(
+      <ReactFlowProvider>
+        <DagNodeComponent
+          {...(baseProps as any)}
+          data={{ variant: 'loop', storeId: 'l', label: 'l' }}
+        />
+      </ReactFlowProvider>,
+    );
+    expect(screen.getByText('loop')).toBeDefined();
+  });
+
+  it('applies the variant color stripe via CSS variable', () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <DagNodeComponent
+          {...(baseProps as any)}
+          data={{ variant: 'approval', storeId: 'gate', label: 'gate' }}
+        />
+      </ReactFlowProvider>,
+    );
+    const stripe = container.querySelector('[data-stripe="true"]') as HTMLElement;
+    expect(stripe).toBeTruthy();
+    expect(stripe.style.background).toContain('--node-approval');
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test DagNodeComponent`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement the component**
+
+Create `packages/studio-core/src/components/DagNodeComponent.tsx`:
+
+```tsx
+import { memo } from 'react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+import type { DagNodeData } from './canvas/deriveFlow';
+import styles from './DagNodeComponent.module.css';
+
+function DagNodeComponentInner({ data, selected }: NodeProps<DagNodeData>) {
+  return (
+    <div
+      className={styles.node}
+      data-selected={selected ? 'true' : 'false'}
+      data-variant={data.variant}
+      style={{ width: 180, height: 80 }}
+    >
+      <div
+        className={styles.stripe}
+        data-stripe="true"
+        style={{ background: `var(--node-${data.variant})` }}
+      />
+      <div className={styles.body}>
+        <div className={styles.label}>{data.label}</div>
+        <div className={styles.tag}>{data.variant}</div>
+      </div>
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+export const DagNodeComponent = memo(DagNodeComponentInner);
+```
+
+Create `packages/studio-core/src/components/DagNodeComponent.module.css`:
+
+```css
+.node {
+  position: relative;
+  display: flex;
+  background: var(--studio-surface);
+  color: var(--studio-fg);
+  border: 1px solid var(--studio-muted);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.node[data-selected='true'] {
+  border-color: var(--studio-accent);
+  box-shadow: 0 0 0 2px var(--studio-accent);
+}
+.stripe {
+  width: 4px;
+  flex: 0 0 4px;
+  height: 100%;
+}
+.body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 12px;
+  gap: 4px;
+  min-width: 0;
+}
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--studio-muted);
+}
+```
+
+- [ ] **Step 4: Add the test-runtime CSS-module + DOM-shim setup**
+
+Bun's test runner doesn't natively understand `.module.css` imports, and happy-dom is missing a couple of browser globals React Flow expects. Add both unconditionally so the test environment is reproducible across machines.
+
+Create `packages/studio-core/bunfig.toml`:
+
+```toml
+[test]
+preload = ["./tests/setup.ts"]
+```
+
+Create `packages/studio-core/tests/setup.ts`:
+
+```ts
+import { plugin } from 'bun';
+
+// Stub `.module.css` imports — return a Proxy whose property access yields the key as a string.
+// Tests must select by `data-*` attributes, NOT by class name, to stay robust under this stub.
+plugin({
+  name: 'css-stub',
+  setup(build) {
+    build.onLoad({ filter: /\.module\.css$/ }, () => ({
+      loader: 'js',
+      contents: 'export default new Proxy({}, { get: (_, k) => k });',
+    }));
+    // Plain `.css` imports (e.g., '@xyflow/react/dist/style.css') become no-ops.
+    build.onLoad({ filter: /\.css$/ }, () => ({
+      loader: 'js',
+      contents: 'export default {};',
+    }));
+  },
+});
+
+// React Flow uses ResizeObserver for the canvas viewport; happy-dom doesn't ship it.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+```
+
+The selectors in the DagNodeComponent test (and every component test in this chunk) use `data-*` attributes precisely because the CSS stub turns `styles.node` into the literal string `'node'` rather than a hashed class — driving tests by data-attrs avoids any disagreement between dev and test resolvers.
+
+- [ ] **Step 5: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test DagNodeComponent`
+Expected: 3 passing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-core/src/components/DagNodeComponent.tsx \
+        packages/studio-core/src/components/DagNodeComponent.module.css \
+        packages/studio-core/tests/components/DagNodeComponent.spec.tsx \
+        packages/studio-core/bunfig.toml \
+        packages/studio-core/tests/setup.ts
+git commit -m "feat(canvas): DagNodeComponent — Phase-2 unified node renderer with variant color stripe"
+```
+
+---
+
+### Task 36: `Canvas` — React Flow integration
+
+**Files:**
+- Create: `packages/studio-core/src/components/canvas/canvasHandlers.ts` (pure handler factories)
+- Create: `packages/studio-core/src/components/Canvas.tsx`
+- Create: `packages/studio-core/tests/components/canvas/canvasHandlers.spec.ts`
+- Create: `packages/studio-core/tests/components/Canvas.spec.tsx`
+
+`Canvas` is the runtime glue. It selects nodes from the store, runs `deriveFlow`, overlays dagre-computed positions for any node id missing from the persistence map, registers `nodeTypes: { dag: DagNodeComponent }`, and translates React Flow events back to store actions:
+
+- `onConnect({source, target})` → `store.connect(source, target)`
+- `onNodesDelete([{id}])` → `store.deleteNodes([id, ...])` (also auto-removes incident edges from store via `deleteNodes`'s built-in dependency cleanup from Phase 1, lines 59-74 of `builder-store.ts`)
+- `onEdgesDelete([{source,target}])` → `store.disconnect(source, target)`
+- `onNodesChange(changes)` — for `change.type === 'position'` with `change.position` set and `change.dragging === false` (drag end), call `positions.setPosition(change.id, change.position)`. **Crucially, the same handler also forwards every change to React-Flow's internal node state via `applyNodeChanges` so the node moves on screen during the drag** — without this, the node would only jump to its final spot on release. Ignore selection/dimensions in our persistence path; React Flow still applies them internally.
+
+`Canvas` takes a `positions` hook instance (from the parent `WorkflowBuilder`) so it doesn't have to know the composite key. The four event-handler bodies are factored into a separate `canvasHandlers.ts` module as **pure, exported factories** — that's what lets us unit-test the `dragging === false` filter (issue called out by reviewer: regressions here are silent, so a direct test is required).
+
+- [ ] **Step 1: Write the canvasHandlers tests**
+
+Create `packages/studio-core/tests/components/canvas/canvasHandlers.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import {
+  makeOnNodesChange,
+  makeOnConnect,
+  makeOnEdgesDelete,
+  makeOnNodesDelete,
+} from '../../../src/components/canvas/canvasHandlers';
+import type { UsePositionPersistence } from '../../../src/hooks/usePositionPersistence';
+
+const stubPositions = (): UsePositionPersistence & { _calls: unknown[][] } => {
+  const map = new Map<string, { x: number; y: number }>();
+  const calls: unknown[][] = [];
+  return {
+    positions: map,
+    setPosition: (id, pos) => {
+      calls.push(['setPosition', id, pos]);
+      map.set(id, pos);
+    },
+    setMany: (entries) => {
+      calls.push(['setMany', entries]);
+      for (const [id, p] of entries) map.set(id, p);
+    },
+    reset: () => {
+      calls.push(['reset']);
+      map.clear();
+    },
+    _calls: calls,
+  } as UsePositionPersistence & { _calls: unknown[][] };
+};
+
+describe('makeOnNodesChange', () => {
+  it('persists ONLY for position changes with dragging === false', () => {
+    const positions = stubPositions();
+    const onChange = makeOnNodesChange(positions);
+
+    onChange([
+      // mid-drag: should NOT persist
+      { type: 'position', id: 'a', dragging: true, position: { x: 5, y: 5 } } as any,
+      // selection / dimensions: should NOT persist
+      { type: 'select', id: 'a', selected: true } as any,
+      { type: 'dimensions', id: 'a', dimensions: { width: 180, height: 80 } } as any,
+      // drag end: SHOULD persist
+      { type: 'position', id: 'a', dragging: false, position: { x: 10, y: 20 } } as any,
+    ]);
+
+    const setPositionCalls = positions._calls.filter((c) => c[0] === 'setPosition');
+    expect(setPositionCalls).toHaveLength(1);
+    expect(setPositionCalls[0]).toEqual(['setPosition', 'a', { x: 10, y: 20 }]);
+  });
+
+  it('skips position changes that lack a position object', () => {
+    const positions = stubPositions();
+    const onChange = makeOnNodesChange(positions);
+    onChange([{ type: 'position', id: 'a', dragging: false } as any]);
+    expect(positions._calls.filter((c) => c[0] === 'setPosition')).toHaveLength(0);
+  });
+});
+
+describe('makeOnConnect', () => {
+  it('calls store.connect with source/target when both present', () => {
+    const calls: unknown[] = [];
+    const onConnect = makeOnConnect((s, t) => calls.push([s, t]));
+    onConnect({ source: 'a', target: 'b', sourceHandle: null, targetHandle: null } as any);
+    expect(calls).toEqual([['a', 'b']]);
+  });
+
+  it('ignores self-connections and missing endpoints', () => {
+    const calls: unknown[] = [];
+    const onConnect = makeOnConnect((s, t) => calls.push([s, t]));
+    onConnect({ source: 'a', target: 'a' } as any); // self
+    onConnect({ source: null, target: 'b' } as any); // missing source
+    onConnect({ source: 'a', target: null } as any); // missing target
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('makeOnEdgesDelete', () => {
+  it('calls store.disconnect once per edge', () => {
+    const calls: unknown[] = [];
+    const onDelete = makeOnEdgesDelete((s, t) => calls.push([s, t]));
+    onDelete([
+      { id: 'a->b', source: 'a', target: 'b' } as any,
+      { id: 'a->c', source: 'a', target: 'c' } as any,
+    ]);
+    expect(calls).toEqual([
+      ['a', 'b'],
+      ['a', 'c'],
+    ]);
+  });
+});
+
+describe('makeOnNodesDelete', () => {
+  it('calls store.deleteNodes with the array of ids', () => {
+    const calls: unknown[] = [];
+    const onDelete = makeOnNodesDelete((ids) => calls.push(ids));
+    onDelete([{ id: 'a' } as any, { id: 'b' } as any]);
+    expect(calls).toEqual([['a', 'b']]);
+  });
+});
+```
+
+- [ ] **Step 2: Implement the handler factories**
+
+Create `packages/studio-core/src/components/canvas/canvasHandlers.ts`:
+
+```ts
+import type { Connection, NodeChange, Node as RFNode, Edge as RFEdge } from '@xyflow/react';
+import type { UsePositionPersistence } from '../../hooks/usePositionPersistence';
+
+/**
+ * Pure factory returning an `onNodesChange` callback that persists drag-end positions.
+ * Note: this handler ONLY tracks persistence — Canvas separately forwards every change
+ * to React Flow's internal state via `applyNodeChanges` so the in-flight drag renders.
+ */
+export function makeOnNodesChange(positions: UsePositionPersistence) {
+  return (changes: NodeChange[]) => {
+    for (const c of changes) {
+      if (c.type !== 'position') continue;
+      if (c.dragging !== false) continue; // ignore mid-drag frames
+      if (!c.position) continue;
+      positions.setPosition(c.id, c.position);
+    }
+  };
+}
+
+export function makeOnConnect(connect: (source: string, target: string) => void) {
+  return (conn: Connection) => {
+    if (!conn.source || !conn.target) return;
+    if (conn.source === conn.target) return;
+    connect(conn.source, conn.target);
+  };
+}
+
+export function makeOnEdgesDelete(disconnect: (source: string, target: string) => void) {
+  return (edges: RFEdge[]) => {
+    for (const e of edges) disconnect(e.source, e.target);
+  };
+}
+
+export function makeOnNodesDelete(deleteNodes: (ids: string[]) => void) {
+  return (nodes: RFNode[]) => {
+    deleteNodes(nodes.map((n) => n.id));
+  };
+}
+```
+
+- [ ] **Step 3: Run handler tests, expect green**
+
+Run: `bun --filter='@archon-studio/core' test canvasHandlers`
+Expected: 6 passing.
+
+- [ ] **Step 4: Write the Canvas component tests**
+
+Create `packages/studio-core/tests/components/Canvas.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeEach, beforeAll } from 'bun:test';
+import { render, screen } from '@testing-library/react';
+import { ReactFlowProvider } from '@xyflow/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { Canvas } from '../../src/components/Canvas';
+import { useBuilderStore } from '../../src/store/builder-store';
+import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
+
+beforeAll(() => {
+  if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+});
+
+beforeEach(() => {
+  useBuilderStore.getState().clearWorkflow();
+  globalThis.localStorage?.clear();
+});
+
+const stubPositionsHook = (): UsePositionPersistence & { _calls: unknown[][] } => {
+  const map = new Map<string, { x: number; y: number }>();
+  const calls: unknown[][] = [];
+  return {
+    positions: map,
+    setPosition: (id, pos) => {
+      calls.push(['setPosition', id, pos]);
+      map.set(id, pos);
+    },
+    setMany: (entries) => {
+      const arr = Array.from(entries);
+      calls.push(['setMany', arr]);
+      for (const [id, p] of arr) map.set(id, p);
+    },
+    reset: () => {
+      calls.push(['reset']);
+      map.clear();
+    },
+    _calls: calls,
+  } as UsePositionPersistence & { _calls: unknown[][] };
+};
+
+const seedTwoNodes = () => {
+  useBuilderStore.getState().loadWorkflow({
+    meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+    nodes: [
+      { id: 'a', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} },
+      {
+        id: 'b',
+        variant: 'command',
+        data: { command: 'bar' },
+        base: { depends_on: ['a'] },
+        unknown: {},
+      },
+    ],
+  });
+};
+
+describe('Canvas', () => {
+  it('renders one DagNodeComponent per store node', () => {
+    seedTwoNodes();
+    const positions = stubPositionsHook();
+    render(
+      <ReactFlowProvider>
+        <Canvas positions={positions} />
+      </ReactFlowProvider>,
+    );
+    expect(screen.getByText('a')).toBeDefined();
+    expect(screen.getByText('b')).toBeDefined();
+  });
+
+  it('seeds dagre positions for nodes missing from the persistence map', () => {
+    seedTwoNodes();
+    const positions = stubPositionsHook();
+    render(
+      <ReactFlowProvider>
+        <Canvas positions={positions} />
+      </ReactFlowProvider>,
+    );
+    const setManyCall = positions._calls.find((c) => c[0] === 'setMany');
+    expect(setManyCall).toBeDefined();
+    const entries = setManyCall![1] as [string, { x: number; y: number }][];
+    expect(entries.map(([id]) => id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('does not re-seed nodes that already have a persisted position', () => {
+    seedTwoNodes();
+    const positions = stubPositionsHook();
+    positions.positions.set('a', { x: 999, y: 999 });
+    render(
+      <ReactFlowProvider>
+        <Canvas positions={positions} />
+      </ReactFlowProvider>,
+    );
+    const setManyCall = positions._calls.find((c) => c[0] === 'setMany');
+    if (setManyCall) {
+      const entries = setManyCall[1] as [string, { x: number; y: number }][];
+      const ids = entries.map(([id]) => id);
+      expect(ids).not.toContain('a');
+      expect(ids).toContain('b');
+    }
+  });
+});
+```
+
+(Deeper interaction tests — onConnect, onNodesDelete fired through React Flow's internal pointer events — are brittle in happy-dom; Phase 10's Playwright suite covers those end-to-end. Phase 2 verifies the handler logic via `canvasHandlers.spec.ts` and trusts React Flow's prop wiring.)
+
+- [ ] **Step 5: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test Canvas`
+Expected: module-not-found.
+
+- [ ] **Step 6: Implement `Canvas`**
+
+Create `packages/studio-core/src/components/Canvas.tsx`:
+
+```tsx
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  applyNodeChanges,
+  type NodeChange,
+  type NodeProps,
+  type Node as RFNode,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+import { useBuilderStore } from '../store/builder-store';
+import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
+import { layoutWithDagre } from '../hooks/useDagre';
+import type { UsePositionPersistence } from '../hooks/usePositionPersistence';
+import { DagNodeComponent } from './DagNodeComponent';
+import {
+  makeOnNodesChange,
+  makeOnConnect,
+  makeOnEdgesDelete,
+  makeOnNodesDelete,
+} from './canvas/canvasHandlers';
+
+const NODE_TYPES = { dag: DagNodeComponent as React.FC<NodeProps<DagNodeData>> };
+
+export interface CanvasProps {
+  /** Position-persistence handle. WorkflowBuilder constructs the real one; tests pass a stub. */
+  positions: UsePositionPersistence;
+}
+
+export function Canvas({ positions }: CanvasProps) {
+  const storeNodes = useBuilderStore((s) => s.nodes);
+  const connect = useBuilderStore((s) => s.connect);
+  const disconnect = useBuilderStore((s) => s.disconnect);
+  const deleteNodes = useBuilderStore((s) => s.deleteNodes);
+
+  // Derive RF nodes/edges from the store. `deriveFlow` returns {x:0,y:0} for
+  // any node missing from the persistence map; we overlay seeded/persisted
+  // positions when rendering below.
+  const { rfNodes: derivedNodes, rfEdges } = useMemo(
+    () => deriveFlow(storeNodes, positions.positions),
+    [storeNodes, positions.positions],
+  );
+
+  // Local in-flight node array for React Flow. We hydrate it from `derivedNodes`
+  // whenever the *set* of node ids changes (load, add, delete) but otherwise let
+  // applyNodeChanges drive it during drag/select so the canvas stays smooth.
+  const [rfNodes, setRfNodes] = useState<RFNode<DagNodeData>[]>(derivedNodes);
+
+  const idsKey = useMemo(() => storeNodes.map((n) => n.id).join(' '), [storeNodes]);
+
+  useEffect(() => {
+    setRfNodes(
+      derivedNodes.map((n) => ({
+        ...n,
+        position: positions.positions.get(n.id) ?? n.position,
+      })),
+    );
+    // We only re-hydrate when the set of ids changes; updates to an existing
+    // node's position go through applyNodeChanges instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
+
+  // Seed dagre-computed positions for any node id NOT already in the map.
+  // setMany is debounced inside the persistence hook so this writes once.
+  // FRAGILITY (Phase 3+): when a node is added mid-session, dagre re-lays out
+  // every node assuming UNMAPPED ones sit at {0,0}. For Phase 2 (single load,
+  // no add) this is fine; Phase 3's NodeLibrary will need to feed dagre the
+  // currently-persisted positions as fixed anchors (or only lay out the new
+  // subgraph). Track this as a Phase-3 prerequisite.
+  useEffect(() => {
+    const missing = derivedNodes.filter((n) => !positions.positions.has(n.id));
+    if (missing.length === 0) return;
+    const laid = layoutWithDagre(derivedNodes, rfEdges);
+    const newEntries: [string, { x: number; y: number }][] = missing
+      .map((n) => [n.id, laid.get(n.id)] as const)
+      .filter((entry): entry is [string, { x: number; y: number }] => entry[1] !== undefined);
+    if (newEntries.length > 0) positions.setMany(newEntries);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
+
+  // Persistence hook — drag-end only. Pure factory tested in canvasHandlers.spec.ts.
+  const persistOnNodesChange = useMemo(() => makeOnNodesChange(positions), [positions]);
+
+  // Forward every change to React Flow's internal state AND record drag-end persistence.
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setRfNodes((prev) => applyNodeChanges(changes, prev));
+      persistOnNodesChange(changes);
+    },
+    [persistOnNodesChange],
+  );
+
+  const onConnect = useMemo(() => makeOnConnect(connect), [connect]);
+  const onEdgesDelete = useMemo(() => makeOnEdgesDelete(disconnect), [disconnect]);
+  const onNodesDelete = useMemo(() => makeOnNodesDelete(deleteNodes), [deleteNodes]);
+
+  return (
+    <ReactFlow
+      nodes={rfNodes}
+      edges={rfEdges}
+      nodeTypes={NODE_TYPES}
+      onNodesChange={onNodesChange}
+      onConnect={onConnect}
+      onEdgesDelete={onEdgesDelete}
+      onNodesDelete={onNodesDelete}
+      fitView
+      proOptions={{ hideAttribution: true }}
+    >
+      <Background />
+      <Controls />
+    </ReactFlow>
+  );
+}
+```
+
+- [ ] **Step 7: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test Canvas`
+Expected: 3 passing. (`tests/setup.ts` from Task 35 already provides the `ResizeObserver` shim.)
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add packages/studio-core/src/components/Canvas.tsx \
+        packages/studio-core/src/components/canvas/canvasHandlers.ts \
+        packages/studio-core/tests/components/Canvas.spec.tsx \
+        packages/studio-core/tests/components/canvas/canvasHandlers.spec.ts
+git commit -m "feat(canvas): Canvas + canvasHandlers — drag renders via applyNodeChanges, drag-end persists"
+```
+
+---
+
+### Task 37: `WorkflowBuilder` shell + `Toolbar` skeleton + public exports
+
+**Files:**
+- Create: `packages/studio-core/src/components/WorkflowBuilder.tsx`
+- Create: `packages/studio-core/src/components/WorkflowBuilder.module.css`
+- Create: `packages/studio-core/src/components/Toolbar.tsx`
+- Create: `packages/studio-core/src/components/StudioErrorBoundary.tsx`
+- Create: `packages/studio-core/tests/components/WorkflowBuilder.spec.tsx`
+- Modify: `packages/studio-core/src/index.ts` (export `WorkflowBuilder` + props)
+
+The shell receives a `client` (a `WorkflowApiClient`), a `theme` preset, an `archonUrl`, a `cwd`, and a `workflowName` (the loaded workflow's identity for position-keying purposes). It mounts the providers and lays out a CSS-grid: header (Toolbar, 56px), three columns (NodeLibrary slot 240px / Canvas / NodeInspector slot 320px), bottom (ValidationPanel slot 0px in Phase 2 — it'll grow when Phase 6 lands). Phase 2 leaves the library/inspector/validation slots as empty `<aside>` placeholders so the layout looks like the eventual product even when the only working part is the canvas.
+
+- [ ] **Step 1: Write failing tests**
+
+Create `packages/studio-core/tests/components/WorkflowBuilder.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll, beforeEach } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { WorkflowBuilder } from '../../src/components/WorkflowBuilder';
+import { useBuilderStore } from '../../src/store/builder-store';
+import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
+
+beforeAll(() => {
+  if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+});
+
+beforeEach(() => {
+  useBuilderStore.getState().clearWorkflow();
+  globalThis.localStorage?.clear();
+});
+
+const noopClient: WorkflowApiClient = {
+  ping: async () => ({ ok: true }),
+  listCodebases: async () => null,
+  listWorkflows: async () => [],
+  listCommands: async () => [],
+  listProviders: async () => [],
+  getWorkflow: async () => ({ name: 'noop', description: '', nodes: [] }) as unknown as never,
+  saveWorkflow: async (_n, _c, d) => d,
+  deleteWorkflow: async () => undefined,
+  validateWorkflow: async () => ({ valid: true }),
+};
+
+describe('WorkflowBuilder', () => {
+  it('renders the layout shell with toolbar / canvas / library + inspector slots', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [
+        { id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} },
+      ],
+    });
+    render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    expect(screen.getByText('demo')).toBeDefined(); // toolbar shows name
+    expect(screen.getByText('only')).toBeDefined(); // canvas renders the node
+    expect(screen.getByLabelText('Node library')).toBeDefined();
+    expect(screen.getByLabelText('Node inspector')).toBeDefined();
+  });
+
+  it('Reset layout button drops persisted positions and re-runs dagre', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [
+        { id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} },
+      ],
+    });
+    // Pre-seed a hand-tweaked position via localStorage
+    globalThis.localStorage.setItem(
+      'studio:positions:__dev__::__dev__::demo',
+      JSON.stringify({ only: { x: 999, y: 999 } }),
+    );
+    render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /reset layout/i }));
+    expect(globalThis.localStorage.getItem('studio:positions:__dev__::__dev__::demo')).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test WorkflowBuilder`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement `StudioErrorBoundary`**
+
+Create `packages/studio-core/src/components/StudioErrorBoundary.tsx`:
+
+```tsx
+import { Component, type ReactNode } from 'react';
+
+interface State {
+  error: Error | null;
+}
+
+export class StudioErrorBoundary extends Component<{ children: ReactNode }, State> {
+  state: State = { error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    // eslint-disable-next-line no-console
+    console.error('[StudioErrorBoundary]', error);
+  }
+
+  render() {
+    if (this.state.error) {
+      // Phase 8 expands this with workflow-JSON copy-out and an issue link.
+      return (
+        <div role="alert" style={{ padding: 24, color: 'var(--studio-error)' }}>
+          <h2>Studio crashed</h2>
+          <pre>{this.state.error.message}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
+- [ ] **Step 4: Implement `Toolbar`**
+
+Create `packages/studio-core/src/components/Toolbar.tsx`:
+
+```tsx
+export interface ToolbarProps {
+  workflowName: string;
+  onResetLayout: () => void;
+}
+
+export function Toolbar({ workflowName, onResetLayout }: ToolbarProps) {
+  return (
+    <header
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        padding: '0 16px',
+        background: 'var(--studio-surface)',
+        borderBottom: '1px solid var(--studio-muted)',
+      }}
+    >
+      <strong style={{ flex: 1 }}>{workflowName}</strong>
+      <button
+        type="button"
+        onClick={onResetLayout}
+        style={{
+          background: 'transparent',
+          color: 'var(--studio-fg)',
+          border: '1px solid var(--studio-muted)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '4px 8px',
+          cursor: 'pointer',
+        }}
+      >
+        Reset layout
+      </button>
+    </header>
+  );
+}
+```
+
+- [ ] **Step 4.5: Verify Phase-0 provider exports match what `WorkflowBuilder` will import**
+
+Two preconditions for Step 5 to compile cleanly. Run them now and fix root causes if either fails.
+
+1. Confirm `ThemePreset` is a named export of `theme/ThemeProvider.tsx`:
+
+```bash
+grep -nE "^export type \{?\s*ThemePreset|^export type ThemePreset" \
+     packages/studio-core/src/theme/ThemeProvider.tsx
+```
+
+Expected: a hit. If absent (e.g., the type is exported under a different name like `Preset`, or inlined), update `theme/ThemeProvider.tsx` to add `export type { ThemePreset }` rather than working around it in `WorkflowBuilder.tsx` — keep the public name stable.
+
+2. Confirm `ApiClientProvider` does NOT internally consume `useQueryClient` (the order `QueryClientProvider → ApiClientProvider` in Step 5 is only safe if the API provider is independent of the query client; if it's the other way around the nesting is reversed):
+
+```bash
+grep -n "useQueryClient\|@tanstack/react-query" \
+     packages/studio-core/src/api/ApiClientProvider.tsx
+```
+
+Expected: no hits. If there ARE hits (Phase 0 may have wired them), swap the nesting in Step 5 so `ApiClientProvider` sits inside `QueryClientProvider` regardless. Re-read the file to confirm before proceeding.
+
+- [ ] **Step 5: Implement `WorkflowBuilder`**
+
+Create `packages/studio-core/src/components/WorkflowBuilder.module.css`:
+
+```css
+.shell {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  grid-template-columns: 240px 1fr 320px;
+  grid-template-areas:
+    'toolbar  toolbar  toolbar'
+    'library  canvas   inspector';
+  height: 100%;
+  width: 100%;
+  background: var(--studio-bg);
+  color: var(--studio-fg);
+}
+.toolbar { grid-area: toolbar; }
+.library { grid-area: library; border-right: 1px solid var(--studio-muted); }
+.canvas { grid-area: canvas; min-width: 0; min-height: 0; }
+.inspector { grid-area: inspector; border-left: 1px solid var(--studio-muted); }
+```
+
+Create `packages/studio-core/src/components/WorkflowBuilder.tsx`:
+
+```tsx
+import { ReactFlowProvider } from '@xyflow/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useMemo } from 'react';
+
+import { ApiClientProvider } from '../api/ApiClientProvider';
+import { ThemeProvider, type ThemePreset } from '../theme/ThemeProvider';
+import type { WorkflowApiClient } from '../api/WorkflowApiClient';
+import { useBuilderStore } from '../store/builder-store';
+import { usePositionPersistence } from '../hooks/usePositionPersistence';
+import { Canvas } from './Canvas';
+import { Toolbar } from './Toolbar';
+import { StudioErrorBoundary } from './StudioErrorBoundary';
+import styles from './WorkflowBuilder.module.css';
+
+export interface WorkflowBuilderProps {
+  client: WorkflowApiClient;
+  theme: ThemePreset;
+  /** Used to key persisted positions. In dev/standalone Phase 2, pass `__dev__`. */
+  archonUrl: string;
+  cwd: string;
+  /** The current workflow's name — also used for position keying. */
+  workflowName: string;
+}
+
+export function WorkflowBuilder({
+  client,
+  theme,
+  archonUrl,
+  cwd,
+  workflowName,
+}: WorkflowBuilderProps) {
+  const queryClient = useMemo(() => new QueryClient(), []);
+  const positions = usePositionPersistence(archonUrl, cwd, workflowName);
+  const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ApiClientProvider client={client}>
+        <ThemeProvider preset={theme}>
+          <StudioErrorBoundary>
+            <div className={styles.shell}>
+              <div className={styles.toolbar}>
+                <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
+              </div>
+              <aside className={styles.library} aria-label="Node library">
+                {/* Phase 3 fills in NodeLibrary */}
+              </aside>
+              <main className={styles.canvas}>
+                <ReactFlowProvider>
+                  <Canvas positions={positions} />
+                </ReactFlowProvider>
+              </main>
+              <aside className={styles.inspector} aria-label="Node inspector">
+                {/* Phase 4 fills in NodeInspector */}
+              </aside>
+            </div>
+          </StudioErrorBoundary>
+        </ThemeProvider>
+      </ApiClientProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+- [ ] **Step 6: Add the public exports**
+
+Edit `packages/studio-core/src/index.ts`. Add:
+
+```ts
+export { WorkflowBuilder, type WorkflowBuilderProps } from './components/WorkflowBuilder';
+```
+
+Keep all existing exports.
+
+- [ ] **Step 7: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test WorkflowBuilder`
+Expected: 2 passing.
+
+- [ ] **Step 8: Build the package**
+
+Run: `bun --filter='@archon-studio/core' run build`
+Expected: `tsc --noEmit` passes (no type errors).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add packages/studio-core/src/components/WorkflowBuilder.tsx \
+        packages/studio-core/src/components/WorkflowBuilder.module.css \
+        packages/studio-core/src/components/Toolbar.tsx \
+        packages/studio-core/src/components/StudioErrorBoundary.tsx \
+        packages/studio-core/src/index.ts \
+        packages/studio-core/tests/components/WorkflowBuilder.spec.tsx
+git commit -m "feat(builder): WorkflowBuilder shell, Toolbar skeleton, error boundary"
+```
+
+---
+
+### Task 38: `StubArchonApiClient` for the standalone shell
+
+**Files:**
+- Create: `packages/studio-api-archon/src/StubArchonApiClient.ts`
+- Modify: `packages/studio-api-archon/src/index.ts` (re-export the stub)
+- Modify: `packages/studio-api-archon/package.json` (add `@archon-studio/fixtures` workspace dep — needed to resolve fixture YAML at runtime)
+
+The stub satisfies `WorkflowApiClient` end-to-end without an Archon process. `getWorkflow(name)` reads the bundled YAML for that fixture name and parses it; `listWorkflows` returns one canned `[{workflow, source: 'bundled'}]`. The standalone uses this in Phase 2; Phase 9 swaps to the real `ArchonApiClient`.
+
+**Layering note (read before writing code):** `WorkflowDefinition` is the *Zod-validated, schema-typed* shape. Parsing YAML produces an `unknown`-shaped JavaScript object. We do NOT cast `parsed as WorkflowDefinition` — that's a lie the type system will let through but the round-trip importer (Phase 1) will surface as a runtime mismatch on a malformed fixture. Instead, pipe through `workflowDefinitionSchema.safeParse` so the stub either returns a real `WorkflowDefinition` or throws a typed error. This matches the spec's §6.3 forward-compat model: unknowns survive at the *node* level via `_unknown`, but the workflow envelope must satisfy the schema or fail loudly.
+
+- [ ] **Step 0: Verify `@archon-studio/core` re-exports the names this file imports**
+
+Confirm these are public exports of `@archon-studio/core` (via `packages/studio-core/src/index.ts`):
+
+```bash
+grep -nE "^export (\{|type \{)[^}]*(WorkflowDefinition|CodebaseInfo|WorkflowListItem|ValidateResult|WorkflowApiClient)" \
+     packages/studio-core/src/index.ts
+```
+
+Expected: hits for all five names. If any are missing, add the relevant `export type {…}` line(s) to `packages/studio-core/src/index.ts` BEFORE writing the stub. (Phase 0/1 should already cover this — `WorkflowApiClient` was added in Phase 0, the others in Phase 1's schema mirror.)
+
+Additionally, confirm `workflowDefinitionSchema` is exported (Step 3 needs it for runtime validation):
+
+```bash
+grep -nE "workflowDefinitionSchema" packages/studio-core/src/schemas/workflow.ts \
+     packages/studio-core/src/schemas/index.ts packages/studio-core/src/index.ts
+```
+
+Expected: a hit in `schemas/workflow.ts` (Phase 0 mirror) and at least a re-export from `schemas/index.ts`. If `src/index.ts` doesn't surface it, add `export { workflowDefinitionSchema } from './schemas';` so the stub can import it.
+
+- [ ] **Step 1: Add the workspace dep**
+
+Edit `packages/studio-api-archon/package.json`. Add to `dependencies`:
+
+```json
+"@archon-studio/fixtures": "workspace:*",
+"yaml": "2.5.1"
+```
+
+- [ ] **Step 2: Reinstall to pick up the workspace edge**
+
+Run: `bun install`
+Expected: succeeds; `bun.lock` updated with the new edge.
+
+- [ ] **Step 3: Implement the stub**
+
+Create `packages/studio-api-archon/src/StubArchonApiClient.ts`:
+
+```ts
+import { parse as parseYaml } from 'yaml';
+import { loadRoundTripFixture } from '@archon-studio/fixtures';
+import { workflowDefinitionSchema } from '@archon-studio/core';
+import type {
+  WorkflowApiClient,
+  CodebaseInfo,
+  WorkflowListItem,
+  ValidateResult,
+  WorkflowDefinition,
+} from '@archon-studio/core';
+
+/**
+ * Phase-2 stub. Resolves `getWorkflow` from the bundled round-trip fixtures.
+ * The real `ArchonApiClient` lands in Phase 9.
+ */
+export class StubArchonApiClient implements WorkflowApiClient {
+  async ping(): Promise<{ ok: true; serverVersion?: string }> {
+    return { ok: true, serverVersion: 'stub' };
+  }
+  async listCodebases(): Promise<CodebaseInfo[] | null> {
+    return null; // simulates an Archon that doesn't expose the endpoint
+  }
+  async listWorkflows(_cwd: string): Promise<WorkflowListItem[]> {
+    return [];
+  }
+  async listCommands(
+    _cwd: string,
+  ): Promise<{ name: string; source: 'project' | 'global' | 'bundled' }[]> {
+    return [];
+  }
+  async listProviders(): Promise<{ id: string; capabilities: Record<string, boolean> }[]> {
+    return [];
+  }
+  async getWorkflow(name: string, _cwd: string): Promise<WorkflowDefinition> {
+    const yamlText = loadRoundTripFixture(name);
+    const parsed: unknown = parseYaml(yamlText);
+    const result = workflowDefinitionSchema.safeParse(parsed);
+    if (!result.success) {
+      throw new Error(
+        `StubArchonApiClient.getWorkflow('${name}'): fixture failed schema validation — ${result.error.message}`,
+      );
+    }
+    return result.data;
+  }
+  async saveWorkflow(
+    _name: string,
+    _cwd: string,
+    definition: WorkflowDefinition,
+  ): Promise<WorkflowDefinition> {
+    return definition;
+  }
+  async deleteWorkflow(_name: string, _cwd: string): Promise<void> {
+    return undefined;
+  }
+  async validateWorkflow(_definition: WorkflowDefinition): Promise<ValidateResult> {
+    return { valid: true };
+  }
+}
+```
+
+- [ ] **Step 4: Re-export from `index.ts`**
+
+Edit `packages/studio-api-archon/src/index.ts`. Make sure both clients are exported:
+
+```ts
+export { ArchonApiClient } from './ArchonApiClient';
+export type { ArchonApiClientOptions } from './ArchonApiClient';
+export { StubArchonApiClient } from './StubArchonApiClient';
+```
+
+(If a different name is used, check the existing file — the line count of this task assumes a one-liner. If `index.ts` doesn't yet exist, create it.)
+
+- [ ] **Step 5: Build the package**
+
+Run: `bun --filter='@archon-studio/api-archon' run build`
+Expected: green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/studio-api-archon/src/StubArchonApiClient.ts \
+        packages/studio-api-archon/src/index.ts \
+        packages/studio-api-archon/package.json bun.lock
+git commit -m "feat(api-archon): StubArchonApiClient — fixture-backed client for the standalone shell"
+```
+
+---
+
+### Task 39: Wire `apps/standalone` to mount `WorkflowBuilder`
+
+**Files:**
+- Modify: `apps/standalone/src/App.tsx` (replace the placeholder)
+- Modify: `apps/standalone/src/index.css` (no changes expected — verify only)
+- Modify: `apps/standalone/package.json` (no changes expected — verify deps already have `@archon-studio/api-archon`, `@archon-studio/fixtures`)
+
+The standalone's job in Phase 2 is to demonstrate the editor running locally, not to navigate. Single page: load the smoke fixture via the stub, hydrate the store with `fromWorkflowDefinition`, mount `WorkflowBuilder`. Once Phase 9 lands, this file is replaced with a real route tree. Until then, this is the smoke harness.
+
+- [ ] **Step 1: Replace `App.tsx`**
+
+Replace the contents of `apps/standalone/src/App.tsx` with:
+
+```tsx
+import { useEffect, useState } from 'react';
+import { WorkflowBuilder, fromWorkflowDefinition, useBuilderStore } from '@archon-studio/core';
+import { StubArchonApiClient } from '@archon-studio/api-archon';
+
+const FIXTURE_NAME = '_smoke-pi-all-nodes';
+const client = new StubArchonApiClient();
+
+export function App() {
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const def = await client.getWorkflow(FIXTURE_NAME, '/dev');
+      if (cancelled) return;
+      // The cast is a structural no-op: WorkflowDefinition is shaped as
+      // Record<string, unknown> at runtime (Zod-validated, but not branded).
+      // Phase 1's `fromWorkflowDefinition` accepts the loose type so the same
+      // importer handles untrusted parsed JSON. Phase 9 may tighten by giving
+      // the importer an overload that accepts WorkflowDefinition directly.
+      const input = fromWorkflowDefinition(def as Record<string, unknown>);
+      useBuilderStore.getState().loadWorkflow(input);
+      setLoaded(true);
+    })().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[standalone] fixture load failed', err);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div style={{ padding: 24, color: 'var(--studio-fg)' }}>
+        Loading {FIXTURE_NAME}…
+      </div>
+    );
+  }
+
+  return (
+    <WorkflowBuilder
+      client={client}
+      theme="archon-dark"
+      archonUrl="__dev__"
+      cwd="__dev__"
+      workflowName={FIXTURE_NAME}
+    />
+  );
+}
+```
+
+- [ ] **Step 2: Re-export `fromWorkflowDefinition` and `useBuilderStore` from studio-core**
+
+The current `studio-core/src/index.ts` doesn't export these. Add to the existing file (preserve the existing exports):
+
+```ts
+export { fromWorkflowDefinition } from './exporter/fromWorkflowDefinition';
+export { toWorkflowDefinition } from './exporter/toWorkflowDefinition';
+export { useBuilderStore } from './store/builder-store';
+export type {
+  BuilderState,
+  WorkflowMeta,
+  LoadWorkflowInput,
+} from './store/builder-store';
+```
+
+(The hook is the easiest way for the standalone to seed the store. Phase 9 will introduce a higher-level `useLoadWorkflow` query and we can drop this surface — but for Phase 2, exposing the store hook is the right amount of API.)
+
+- [ ] **Step 3: Build the standalone**
+
+Run: `bun --filter='@archon-studio/standalone' run build`
+Expected: tsc passes; Vite bundle written to `apps/standalone/dist/`.
+
+If type errors flag on `parsing` `def` as `Record<string, unknown>`, the cast in the `fromWorkflowDefinition` call resolves them. Leave any other errors visible — fix root causes.
+
+- [ ] **Step 4: Run the dev server (background)**
+
+Run (background): `bun --filter='@archon-studio/standalone' run dev`
+Expected: Vite prints "Local: http://localhost:5173/" within ~2 seconds. Leave it running for the next task.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/standalone/src/App.tsx packages/studio-core/src/index.ts
+git commit -m "feat(standalone): mount WorkflowBuilder against StubArchonApiClient with the smoke fixture"
+```
+
+---
+
+### Task 40: Manual visual smoke
+
+**Files:** none
+
+This task is the human-eyes verification that Phase 2 actually delivered a working canvas. Skip is not an option — automated tests cover unit behaviour, but only the eyes catch "the canvas is invisible because flex collapsed" or "the dagre layout overlapped two nodes."
+
+- [ ] **Step 1: Open the dev URL**
+
+If you have the `agent-browser` or `browse` skill, invoke it now to open `http://localhost:5173/`. Otherwise, open the URL in any modern browser.
+
+- [ ] **Step 2: Visual checks**
+
+Confirm by looking:
+
+1. The page has a dark background (`archon-dark` preset is applied).
+2. Top header shows `_smoke-pi-all-nodes` and a "Reset layout" button.
+3. Left aside is a thin empty column with a right border.
+4. Right aside is a slightly wider empty column with a left border.
+5. Center area has React Flow's canvas: the smoke fixture's nodes are visible, laid out top-to-bottom, parents above children.
+6. Each node card has a colored stripe on the left (commands green, prompt purple, bash orange, loop yellow, etc. — matches `tokens.css`).
+7. Each node shows its id label and a small `command` / `prompt` / `loop` / `bash` / `script` tag.
+8. Edges are rendered as smooth curves. Edges into nodes that have a `when:` field are dashed and purple.
+9. Bottom-left has React Flow's controls (zoom in/out/fit/lock).
+
+- [ ] **Step 3: Drag a node**
+
+Click and drag any node ~100 px in either direction. Release. Confirm the node stays where you dropped it — no snap-back.
+
+- [ ] **Step 4: Reload the page**
+
+Hard reload (Ctrl/Cmd-Shift-R). Confirm the dragged node is back in its dropped position, not snapped to a fresh dagre layout.
+
+- [ ] **Step 5: Click "Reset layout"**
+
+Confirm the dragged node returns to its dagre-computed position. Reload again — confirm the node stays at the dagre position (because reset cleared the localStorage key).
+
+- [ ] **Step 6: Connect / disconnect**
+
+Drag from the bottom handle of any node onto the top handle of another. Confirm a new edge appears. Right-click or select-and-press-Delete on an edge — confirm it disappears. Optionally, open devtools and run `useBuilderStore.getState().nodes.find(n=>n.id==='<target>').base.depends_on` to confirm the store mirrors the visual change.
+
+- [ ] **Step 7: Delete a node**
+
+Select a node (click), press Delete or Backspace. Confirm the node disappears AND any edges into it disappear. Confirm via store: `useBuilderStore.getState().nodes.length` decreased by 1 and no surviving node has the deleted id in its `depends_on`.
+
+- [ ] **Step 8: Optional — capture a screenshot**
+
+If the `browse` skill is available, save a screenshot to `docs/superpowers/specs/phase-2-smoke.png` for posterity. (Don't commit large binary if the repo's policy prefers external storage — check `.gitignore` first.)
+
+- [ ] **Step 9: Stop the dev server**
+
+Cancel the background process (the runtime offers a "kill" affordance per the long-running command UI).
+
+If any of Steps 2–7 fail, **do not move on**. Diagnose:
+- Blank canvas → React Flow's parent has no height. Confirm `WorkflowBuilder.module.css`'s grid `min-height` propagates from `apps/standalone/src/index.css`'s `#root { height: 100% }`.
+- Nodes overlap perfectly → `useDagre`'s setNode call missed `width`/`height` (Task 33 step 3 — re-read).
+- Edges missing → `deriveFlow`'s `knownIds` filter is dropping valid sources. Inspect `storeNodes` in devtools.
+- Drag doesn't persist → `Canvas`'s `onNodesChange` isn't filtering on `dragging === false`; it's catching the wrong frame.
+
+---
+
+### Task 41: Phase 2 verification — full local + CI green, push, tag
+
+**Files:** none
+
+Same shape as Task 31 (Phase 1 verification). All-green guard before tagging.
+
+- [ ] **Step 1: Run the full local pipeline**
+
+Run:
+```bash
+bun --filter='*' run build
+bun --filter='*' run test
+bun run check-schema-drift
+```
+
+If any step fails, fix root cause; do not paper over.
+
+- [ ] **Step 2: Push to origin/main**
+
+```bash
+git push origin main
+```
+
+Verify the `CI` and `round-trip` workflows go green on GitHub Actions before tagging.
+
+- [ ] **Step 3: Tag**
+
+```bash
+git tag -a phase-2 -m "Phase 2: Canvas + DagNode + position persistence + WorkflowBuilder shell + standalone smoke"
+git push origin phase-2
+```
+
+- [ ] **Step 4: Update Phase 2 deliverables checklist below**
+
+---
+
+## Phase 2 deliverables checklist
+
+- [ ] `deriveFlow` pure store→React-Flow projection with when-aware edge styling (Task 32)
+- [ ] `layoutWithDagre` + `useDagre` matching Archon's `rankdir TB / 80 / 40` settings (Task 33)
+- [ ] `usePositionPersistence` localStorage-backed positions, debounced + flush-on-hide, with `reset()` (Task 34)
+- [ ] `DagNodeComponent` Phase-2 unified renderer (variant color stripe, top/bottom handles, label + tag) (Task 35)
+- [ ] `Canvas` React Flow integration: store-driven render, dagre seeding, drag persists, connect/disconnect/delete mutate store (Task 36)
+- [ ] `WorkflowBuilder` shell + `Toolbar` skeleton + `StudioErrorBoundary` + public exports (Task 37)
+- [ ] `StubArchonApiClient` resolves `getWorkflow` from bundled fixtures (Task 38)
+- [ ] `apps/standalone` mounts `WorkflowBuilder` against the stub and renders the smoke fixture (Task 39)
+- [ ] Manual visual smoke passes — drag, reload, reset, connect/disconnect, delete (Task 40)
+- [ ] All local + remote CI green; `phase-2` tag pushed (Task 41)
