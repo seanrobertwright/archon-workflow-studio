@@ -14,3 +14,8 @@ export { workflowDefinitionSchema } from './schemas';
 export { VARIANT_IDS, type VariantId } from './nodes/registry';
 
 export { WorkflowBuilder, type WorkflowBuilderProps } from './components/WorkflowBuilder';
+
+export { fromWorkflowDefinition } from './exporter/fromWorkflowDefinition';
+export { toWorkflowDefinition } from './exporter/toWorkflowDefinition';
+export { useBuilderStore } from './store/builder-store';
+export type { BuilderState, WorkflowMeta, LoadWorkflowInput } from './store/builder-store';
