@@ -11,3 +11,9 @@
 # `ANTHROPIC_API_KEY=sk-ant-...` would still trip the high-confidence pattern
 # `\bsk-ant-...\b` independently of this allowlist entry.
 Auth: ANTHROPIC_API_KEY
+
+# Remotion video-template example code (commit 51ef125). The line reads an
+# env-var into a local; it's not a literal token. A REAL Mapbox token would
+# look like `pk.eyJ1...` and trip the JWT-shaped pattern independently.
+# File: .claude/skills/video-processor/* (template content)
+process.env.REMOTION_MAPBOX_TOKEN
