@@ -1,9 +1,12 @@
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node as RFNode, type NodeProps } from '@xyflow/react';
 import type { DagNodeData } from './canvas/deriveFlow';
 import styles from './DagNodeComponent.module.css';
 
-function DagNodeComponentInner({ data, selected }: NodeProps<DagNodeData>) {
+// xyflow v12: NodeProps is generic over the WHOLE Node type, not just data.
+type DagFlowNode = RFNode<DagNodeData, 'dag'>;
+
+function DagNodeComponentInner({ data, selected }: NodeProps<DagFlowNode>) {
   return (
     <div
       className={styles.node}

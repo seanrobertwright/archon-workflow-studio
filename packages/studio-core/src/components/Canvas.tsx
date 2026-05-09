@@ -5,7 +5,6 @@ import {
   Controls,
   applyNodeChanges,
   type NodeChange,
-  type NodeProps,
   type Node as RFNode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -22,7 +21,7 @@ import {
   makeOnNodesDelete,
 } from './canvas/canvasHandlers';
 
-const NODE_TYPES = { dag: DagNodeComponent as React.FC<NodeProps<DagNodeData>> };
+const NODE_TYPES = { dag: DagNodeComponent };
 
 export interface CanvasProps {
   /** Position-persistence handle. WorkflowBuilder constructs the real one; tests pass a stub. */
@@ -84,7 +83,7 @@ export function Canvas({ positions }: CanvasProps) {
   // Forward every change to React Flow's internal state AND record drag-end persistence.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      setRfNodes((prev) => applyNodeChanges(changes, prev));
+      setRfNodes((prev) => applyNodeChanges(changes, prev) as RFNode<DagNodeData>[]);
       persistOnNodesChange(changes);
     },
     [persistOnNodesChange],
