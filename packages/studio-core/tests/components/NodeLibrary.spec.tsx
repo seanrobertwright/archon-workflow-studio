@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'bun:test';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, fireEvent, cleanup } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { NodeLibrary } from '../../src/components/NodeLibrary';
+import { ApiClientProvider } from '../../src/api/ApiClientProvider';
 import { useBuilderStore } from '../../src/store/builder-store';
 import { LIBRARY_DRAG_MIME, decodeLibraryDrag } from '../../src/components/library/dragPayload';
+import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -13,16 +16,40 @@ beforeAll(() => {
 beforeEach(() => useBuilderStore.getState().clearWorkflow());
 afterEach(() => cleanup());
 
+// Stub client used purely so CommandsSection (rendered by NodeLibrary) doesn't
+// crash when these tests mount the library. The library tests don't care about
+// commands — they just need the providers to be present.
+const stubClient: WorkflowApiClient = {
+  ping: async () => ({ ok: true }),
+  listCodebases: async () => null,
+  listWorkflows: async () => [],
+  listCommands: async () => [],
+  listProviders: async () => [],
+  getWorkflow: async () => ({ name: '', description: '', nodes: [] }) as never,
+  saveWorkflow: async (_n, _c, d) => d,
+  deleteWorkflow: async () => undefined,
+  validateWorkflow: async () => ({ valid: true }),
+};
+
+function renderLibrary() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <ApiClientProvider client={stubClient}>
+        <ReactFlowProvider>
+          <NodeLibrary cwd="/abs/path/test-cwd" />
+        </ReactFlowProvider>
+      </ApiClientProvider>
+    </QueryClientProvider>,
+  );
+}
+
 describe('NodeLibrary', () => {
   it('renders one tile per variant under the Variants heading', () => {
-    render(
-      <ReactFlowProvider>
-        <NodeLibrary />
-      </ReactFlowProvider>,
-    );
-    expect(screen.getByRole('heading', { name: /variants/i })).toBeDefined();
+    const { getByRole, getByLabelText } = renderLibrary();
+    expect(getByRole('heading', { name: /variants/i })).toBeDefined();
     for (const v of ['command', 'prompt', 'bash', 'script', 'loop', 'approval', 'cancel']) {
-      expect(screen.getByLabelText(`Add ${v} node`)).toBeDefined();
+      expect(getByLabelText(`Add ${v} node`)).toBeDefined();
     }
   });
 
@@ -31,24 +58,16 @@ describe('NodeLibrary', () => {
       meta: { name: 'w', description: '', base: {}, unknown: {} },
       nodes: [],
     });
-    render(
-      <ReactFlowProvider>
-        <NodeLibrary />
-      </ReactFlowProvider>,
-    );
-    fireEvent.click(screen.getByLabelText('Add loop node'));
+    const { getByLabelText } = renderLibrary();
+    fireEvent.click(getByLabelText('Add loop node'));
     const nodes = useBuilderStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].variant).toBe('loop');
   });
 
   it('emits a variant drag payload via dataTransfer on tile drag', () => {
-    render(
-      <ReactFlowProvider>
-        <NodeLibrary />
-      </ReactFlowProvider>,
-    );
-    const tile = screen.getByLabelText('Add command node');
+    const { getByLabelText } = renderLibrary();
+    const tile = getByLabelText('Add command node');
     const data: Record<string, string> = {};
     const dataTransfer = {
       setData: (k: string, v: string) => {

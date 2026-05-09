@@ -2,10 +2,16 @@ import { VARIANT_IDS } from '../nodes/registry';
 import { defaultRegistry } from '../nodes/default-registry';
 import { useBuilderStore } from '../store/builder-store';
 import { VariantTile } from './library/VariantTile';
+import { CommandsSection } from './library/CommandsSection';
 import { LIBRARY_DRAG_MIME, encodeLibraryDrag } from './library/dragPayload';
 import styles from './NodeLibrary.module.css';
 
-export function NodeLibrary() {
+export interface NodeLibraryProps {
+  /** Working directory for cwd-scoped queries (e.g. listCommands). */
+  cwd: string;
+}
+
+export function NodeLibrary({ cwd }: NodeLibraryProps) {
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   return (
     <aside aria-label="Node library" className={styles.library}>
@@ -31,7 +37,7 @@ export function NodeLibrary() {
           ))}
         </ul>
       </section>
-      {/* Commands section — Task 48 introduces a `cwd` prop and renders <CommandsSection cwd={cwd} /> */}
+      <CommandsSection cwd={cwd} />
       {/* Snippets section — Task 51 */}
     </aside>
   );

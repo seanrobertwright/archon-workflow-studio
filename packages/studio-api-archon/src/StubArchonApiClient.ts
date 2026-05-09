@@ -38,7 +38,10 @@ export class StubArchonApiClient implements WorkflowApiClient {
   async listCommands(
     _cwd: string,
   ): Promise<{ name: string; source: 'project' | 'global' | 'bundled' }[]> {
-    return [];
+    return [
+      { name: 'classify', source: 'project' },
+      { name: 'review', source: 'project' },
+    ];
   }
   async listProviders(): Promise<{ id: string; capabilities: Record<string, boolean> }[]> {
     return [];

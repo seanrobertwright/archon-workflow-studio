@@ -46,7 +46,7 @@ export function WorkflowBuilder({
                   <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
                 </div>
                 <div className={styles.library}>
-                  <NodeLibrary />
+                  <NodeLibrary cwd={cwd} />
                 </div>
                 <main className={styles.canvas}>
                   <ReactFlowProvider>
