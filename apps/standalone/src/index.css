@@ -9,3 +9,8 @@ body,
   color: var(--studio-fg);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
+body {
+  /* Studio fills the viewport; no document-level scroll. Internal panels
+     (NodeLibrary, future Inspector) handle their own overflow. */
+  overflow: hidden;
+}
