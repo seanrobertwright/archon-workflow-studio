@@ -7,12 +7,12 @@ import { RenameField } from './shared';
 import { InspectorTabs } from './InspectorTabs';
 import { ExecutionTab } from './tabs/ExecutionTab';
 import { ProviderTab } from './tabs/ProviderTab';
+import { ToolsTab } from './tabs/ToolsTab';
+import { HooksTab } from './tabs/HooksTab';
 
-// Stubs for shared base-field tabs not yet implemented (Tasks 58–59 replace
+// Stubs for shared base-field tabs not yet implemented (Task 59 replaces
 // these with real components). They render testable markers so existing tests
 // can still verify tab switching without depending on tab content.
-const StubTools = () => <div data-testid="tab-stub-tools">Tools (Task 58)</div>;
-const StubHooks = () => <div data-testid="tab-stub-hooks">Hooks (Task 58)</div>;
 const StubSkillsMcp = () => <div data-testid="tab-stub-skills-mcp">Skills+MCP (Task 59)</div>;
 const StubAdvanced = () => <div data-testid="tab-stub-advanced">Advanced (Task 59)</div>;
 
@@ -87,9 +87,9 @@ export function NodeInspector() {
             case 'provider':
               return <ProviderTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'tools':
-              return <StubTools />;
+              return <ToolsTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'hooks':
-              return <StubHooks />;
+              return <HooksTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'skills-mcp':
               return <StubSkillsMcp />;
             case 'advanced':
