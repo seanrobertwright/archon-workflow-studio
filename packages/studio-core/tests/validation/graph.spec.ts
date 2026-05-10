@@ -26,7 +26,27 @@ describe('graph rules', () => {
 
   it('flags a self-cycle', () => {
     const issues = runGraphRules([n('a', ['a'])]);
-    expect(issues.some((i) => i.rule === 'graph.cycle')).toBe(true);
+    const cyc = issues.filter((i) => i.rule === 'graph.cycle');
+    expect(cyc).toHaveLength(1);
+    expect(cyc[0].path.nodeId).toBe('a');
+    // Self-ref is not an unknown ref — 'a' exists in the graph.
+    expect(issues.filter((i) => i.rule === 'graph.ref.unknown')).toHaveLength(0);
+  });
+
+  it('flags two disconnected cycles independently', () => {
+    const issues = runGraphRules([n('a', ['a']), n('b', ['b'])]);
+    const cyc = issues.filter((i) => i.rule === 'graph.cycle');
+    expect(cyc).toHaveLength(2);
+    expect(new Set(cyc.map((i) => i.path.nodeId))).toEqual(new Set(['a', 'b']));
+  });
+
+  it('emits both ref.unknown and cycle when a node has both', () => {
+    // 'a' depends on itself (cycle) and on a non-existent 'ghost' (ref).
+    const issues = runGraphRules([n('a', ['a', 'ghost'])]);
+    expect(issues.filter((i) => i.rule === 'graph.cycle')).toHaveLength(1);
+    const refs = issues.filter((i) => i.rule === 'graph.ref.unknown');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].message).toContain('ghost');
   });
 
   it('flags a 3-node cycle and attaches an issue to every member', () => {

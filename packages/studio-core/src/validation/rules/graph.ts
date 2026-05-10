@@ -45,6 +45,11 @@ export function runGraphRules(nodes: readonly DagNode[]): Issue[] {
   //
   // Results are collected into a Set<string> so each node is reported once
   // even if it participates in multiple paths through the DFS.
+  //
+  // NOTE: The cycle DFS is recursive. V8's call-stack depth is ~10–15k frames.
+  // `depends_on` graphs in the Studio UI are bounded by canvas node counts
+  // (typically < 200). If programmatically-generated graphs of arbitrary depth
+  // become a supported input, convert this to an iterative stack-based DFS.
   // -------------------------------------------------------------------------
   const adj = new Map<string, string[]>();
   for (const node of nodes) {
