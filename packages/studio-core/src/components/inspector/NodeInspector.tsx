@@ -9,12 +9,8 @@ import { ExecutionTab } from './tabs/ExecutionTab';
 import { ProviderTab } from './tabs/ProviderTab';
 import { ToolsTab } from './tabs/ToolsTab';
 import { HooksTab } from './tabs/HooksTab';
-
-// Stubs for shared base-field tabs not yet implemented (Task 59 replaces
-// these with real components). They render testable markers so existing tests
-// can still verify tab switching without depending on tab content.
-const StubSkillsMcp = () => <div data-testid="tab-stub-skills-mcp">Skills+MCP (Task 59)</div>;
-const StubAdvanced = () => <div data-testid="tab-stub-advanced">Advanced (Task 59)</div>;
+import { SkillsMcpTab } from './tabs/SkillsMcpTab';
+import { AdvancedTab } from './tabs/AdvancedTab';
 
 /**
  * Right-rail editor for the currently-selected node. Reads selection from the
@@ -91,9 +87,9 @@ export function NodeInspector() {
             case 'hooks':
               return <HooksTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'skills-mcp':
-              return <StubSkillsMcp />;
+              return <SkillsMcpTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'advanced':
-              return <StubAdvanced />;
+              return <AdvancedTab {...(generalProps as InspectorProps<unknown>)} />;
           }
         }}
       </InspectorTabs>
