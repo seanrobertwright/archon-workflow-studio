@@ -50,11 +50,11 @@ list in the visual atom row.
 
 ## Logical connectives
 
-| Connective | Studio v1 supports | Notes                                                                                 |
-| ---------- | ------------------ | ------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------------ |
-| `&&`       | yes                | AND, higher precedence                                                                |
-| `          |                    | `                                                                                     | yes | OR, lower precedence                                               |
-| `(` `)`    | no                 | upstream evaluator does NOT support parentheses; expressions are split textually on ` |     | `first then on`&&`. Quoted regions are respected during splitting. |
+| Connective | Studio v1 supports | Notes                                                                                                                                    |
+| ---------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `&&`       | yes                | AND, higher precedence                                                                                                                   |
+| `\|\|`     | yes                | OR, lower precedence                                                                                                                     |
+| `(` `)`    | no                 | upstream evaluator does NOT support parentheses; expressions are split textually on `\|\|` first then on `&&`. Quoted regions respected. |
 
 **Precedence:** `||` is split first (lower precedence), then each OR clause is
 split on `&&`. There is no parser — splitting is purely textual via
