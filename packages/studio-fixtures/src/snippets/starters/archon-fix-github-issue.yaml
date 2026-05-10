@@ -73,7 +73,7 @@ nodes:
       properties:
         issue_type:
           type: string
-          enum: ["bug", "feature", "enhancement", "refactor", "chore", "documentation"]
+          enum: ['bug', 'feature', 'enhancement', 'refactor', 'chore', 'documentation']
         title:
           type: string
         reasoning:
@@ -234,19 +234,19 @@ nodes:
       properties:
         run_code_review:
           type: string
-          enum: ["true", "false"]
+          enum: ['true', 'false']
         run_error_handling:
           type: string
-          enum: ["true", "false"]
+          enum: ['true', 'false']
         run_test_coverage:
           type: string
-          enum: ["true", "false"]
+          enum: ['true', 'false']
         run_comment_quality:
           type: string
-          enum: ["true", "false"]
+          enum: ['true', 'false']
         run_docs_impact:
           type: string
-          enum: ["true", "false"]
+          enum: ['true', 'false']
         reasoning:
           type: string
       required:

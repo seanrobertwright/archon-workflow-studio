@@ -1,5 +1,6 @@
 .library {
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   background: var(--studio-bg);
   overflow-y: auto;
