@@ -70,11 +70,13 @@ export function Canvas() {
   // Re-hydrate the in-flight rfNodes whenever:
   //   - the set of node ids changes (load, add, delete), OR
   //   - the positions map is replaced (e.g., Reset Layout clears it and the
-  //     seed effect below repopulates with fresh dagre output).
-  // Note: drag-end ALSO produces a new positions map (Map identity churns),
-  // but `applyNodeChanges` has already updated rfNodes with the same final
-  // position, so the rehydrate is idempotent — costs a redundant React state
-  // write, no visual disruption.
+  //     seed effect below repopulates with fresh dagre output), OR
+  //   - the store's BuilderNode content changes (Inspector edit, rename
+  //     cascade) — without this, RFNode.data.node holds a stale reference
+  //     and the per-variant Renderer keeps painting old field values.
+  // Drag-end ALSO produces a new positions map (Map identity churns), but
+  // `applyNodeChanges` has already updated rfNodes with the same final
+  // position, so the rehydrate is idempotent.
   useEffect(() => {
     setRfNodes(
       derivedNodes.map((n) => ({
@@ -82,7 +84,7 @@ export function Canvas() {
         position: positions.positions.get(n.id) ?? n.position,
       })),
     );
-  }, [idsKey, positions.positions]);
+  }, [derivedNodes, positions.positions]);
 
   // Seed positions for any node id NOT already in the map.
   // Branches:
