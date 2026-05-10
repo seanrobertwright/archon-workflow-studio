@@ -5,7 +5,7 @@
 | Phase 2 — Canvas, DagNode, position persistence, WorkflowBuilder shell, standalone smoke | ✅      | ✅       | ✅       |
 | Phase 3 — NodeLibrary + per-variant Renderers + snippets                                 | ✅      | ✅       | ✅       |
 | Phase 4 — NodeInspector + variant inspectors + cascading rename                          | ✅      | ✅       | ✅       |
-| Phase 5 — Visual `when:` builder + autocomplete                                          | ❌      | ❌       | ❌       |
+| Phase 5 — Visual `when:` builder + autocomplete                                          | ✅      | ❌       | ❌       |
 | Phase 6 — Validation pipeline + ValidationPanel                                          | ❌      | ❌       | ❌       |
 | Phase 7 — YAML preview pane                                                              | ❌      | ❌       | ❌       |
 | Phase 8 — Editor polish (undo/redo, multi-select, copy/paste, theme picker)              | ❌      | ❌       | ❌       |
