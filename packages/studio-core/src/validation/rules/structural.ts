@@ -170,10 +170,10 @@ function requiredFieldRules(n: DagNode): Issue[] {
     if (!approval || typeof approval !== 'object') {
       out.push(
         mk(
-          'structural.required.approval.message',
+          'structural.required.approval',
           n.id,
-          'approval.message',
-          'Approval node requires an `approval.message` field.',
+          'approval',
+          'Approval node requires an `approval` object.',
         ),
       );
       return out;

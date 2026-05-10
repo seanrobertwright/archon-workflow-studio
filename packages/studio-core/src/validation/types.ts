@@ -17,7 +17,17 @@ export interface Issue {
   path: IssuePath;
 }
 
-/** Cheap, deterministic hash (djb2). No cryptographic strength required. */
+/**
+ * Cheap, deterministic hash (djb2). No cryptographic strength required.
+ *
+ * The key uses `|` as a field separator. In theory a message containing `|`
+ * could collide with a different (rule, path, message) tuple, but in practice
+ * (a) djb2 is not collision-free anyway — IDs are advisory, not authoritative,
+ * and (b) the panel only uses these IDs for React keys and scroll-preservation,
+ * where collisions are visually harmless. If stricter uniqueness is ever
+ * needed, switch the separator to `\x00` (a NUL byte) which cannot appear in
+ * any normal rule/path/message string.
+ */
 export function issueId(rule: string, path: IssuePath, message: string): string {
   const key = `${rule}|${path.nodeId ?? ''}|${path.field ?? ''}|${path.atomIndex ?? ''}|${message}`;
   let h = 5381;

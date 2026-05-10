@@ -1,14 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { runStructuralRules } from '../../src/validation/rules/structural';
-import type {
-  DagNode,
-  CommandNode,
-  PromptNode,
-  BashNode,
-  ScriptNode,
-  LoopNode,
-  ApprovalNode,
-} from '../../src/schemas';
+import type { DagNode } from '../../src/schemas';
 
 // ---------------------------------------------------------------------------
 // Helpers — build minimal DagNode values that bypass Zod (for testing rules
@@ -156,10 +148,20 @@ describe('structural rules', () => {
     expect(issues.some((i) => i.rule === 'structural.required.loop.max_iterations')).toBe(true);
   });
 
+  it('flags missing approval object on approval node (undefined)', () => {
+    const bad = approvalNode({ approval: undefined });
+    const issues = runStructuralRules([bad]);
+    expect(issues.some((i) => i.rule === 'structural.required.approval')).toBe(true);
+    // And NOT the sub-field rule — those are distinct failure modes.
+    expect(issues.some((i) => i.rule === 'structural.required.approval.message')).toBe(false);
+  });
+
   it('flags missing approval.message on approval node (empty string)', () => {
     const bad = approvalNode({ approval: { message: '' } });
     const issues = runStructuralRules([bad]);
     expect(issues.some((i) => i.rule === 'structural.required.approval.message')).toBe(true);
+    // And NOT the missing-object rule — those are distinct failure modes.
+    expect(issues.some((i) => i.rule === 'structural.required.approval')).toBe(false);
   });
 
   it('flags missing cancel reason (empty string)', () => {
