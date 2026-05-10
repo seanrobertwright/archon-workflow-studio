@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Canvas } from '../../src/components/Canvas';
 import { useBuilderStore } from '../../src/store/builder-store';
@@ -108,5 +108,52 @@ describe('Canvas', () => {
       expect(ids).not.toContain('a');
       expect(ids).toContain('b');
     }
+  });
+
+  it('re-renders the per-variant Renderer when inspector edits the BuilderNode data', () => {
+    seedTwoNodes();
+    const positions = stubPositionsHook();
+    positions.positions.set('a', { x: 0, y: 0 });
+    positions.positions.set('b', { x: 100, y: 100 });
+    const { container } = render(
+      <PositionProvider value={positions}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </PositionProvider>,
+    );
+    // Sanity: the command-variant label is the data.command value when present.
+    expect(container.textContent).toContain('foo');
+
+    act(() => {
+      useBuilderStore.getState().updateNodeData('a', { command: 'renamed-cmd' });
+    });
+
+    // Without the canvas-rehydrate-on-data-change fix, rfNodes still holds a
+    // stale `data.node` reference and the Renderer keeps painting "foo".
+    expect(container.textContent).toContain('renamed-cmd');
+    expect(container.textContent).not.toContain('foo');
+  });
+
+  it('re-renders the canvas when a node is renamed via store.renameNode', () => {
+    seedTwoNodes();
+    const positions = stubPositionsHook();
+    positions.positions.set('a', { x: 0, y: 0 });
+    positions.positions.set('b', { x: 100, y: 100 });
+    const { container } = render(
+      <PositionProvider value={positions}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </PositionProvider>,
+    );
+    expect(container.querySelector('[data-id="a"]')).toBeDefined();
+
+    act(() => {
+      useBuilderStore.getState().renameNode('a', 'aprime');
+    });
+
+    expect(container.querySelector('[data-id="aprime"]')).toBeDefined();
+    expect(container.querySelector('[data-id="a"]')).toBeNull();
   });
 });
