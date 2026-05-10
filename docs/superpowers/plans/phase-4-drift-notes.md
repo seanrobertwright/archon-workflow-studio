@@ -172,7 +172,71 @@ match, and note the deviation in the commit message. Specifically:
 
 ---
 
-## 8. Resolved decisions (record so future-you doesn't re-litigate)
+## 8. Task-specific drift discovered during execution
+
+### Task 57 (ExecutionTab + ProviderTab) — TODO when resumed
+
+- **`model_settings` is not a real field.** Plan treats it as a known nested
+  object with sub-keys. The schema has discrete fields (`model`, `provider`,
+  `effort`, `thinking`, `maxBudgetUsd`, `systemPrompt`, `fallbackModel`,
+  `betas`) that are individually base fields. Either render those individually
+  or render `_unknown.model_settings` as a `JsonField` for forward-compat.
+- **`timeout` is variant-specific** (bash + script only — already in those
+  variants' General Inspector). The plan's ExecutionTab spec includes `timeout`
+  as a shared base field — drop it from ExecutionTab entirely.
+- **`on_failure` / `on_timeout` shapes:** verify against `dag-node.ts` before
+  writing the brief. Plan-described shapes may not match.
+- **`retry`** is a real base field (`stepRetryConfigSchema` from
+  `schemas/retry.ts`); gate it on `!variant.capabilities.forbidsRetry`
+  (loop forbids retry).
+- **`sandbox`** is a base field, schema is `sandboxSettingsSchema` (passthrough
+  with optional `enabled`, `network`, etc. — render as JSON or split the
+  common boolean toggles).
+
+### Task 58 (ToolsTab + HooksTab) — TODO when resumed
+
+- **`disallowed_tools` → `denied_tools`** (per drift §3 above).
+- **`output_format` is `z.unknown()` passthrough** — `JsonField` is the right
+  control.
+- **HooksTab: USE `JsonField`** (user decision, this session). The plan's
+  `{event, match, command, blocking}[]` row UI is wrong — actual schema is
+  `Record<EventName, Array<{matcher?, response, timeout?}>>` with 21 named
+  events and structured JSON responses (`response` is the SDK
+  `SyncHookJSONOutput`, not a shell command). A real structured editor is
+  Phase 8 polish; for Phase 4 ship the raw JSON editor with the same
+  forward-compat semantics as the Advanced tab.
+
+### Task 59 (SkillsMcpTab + AdvancedTab + migration test) — TODO when resumed
+
+- **`skills` and `mcp` are base fields** (string lists in `BASE_FIELD_KEYS`).
+  Render as line-per-row textareas, same pattern as ScriptInspector's `deps`.
+- **AdvancedTab** edits three things: `data._unknown` (variant-data forward
+  compat), `n.unknown` (top-level forward compat), and shows the variant
+  `capabilities` readout. All three flow through `updateNodeData` (which
+  routes to the right bucket automatically).
+- **§12.2 migration test is the load-bearing Phase-4 deliverable.** It must
+  prove `convertVariant` round-trips data through a `data._unknown.
+  _converted_from` stash so the user can convert command → bash → command
+  without losing their `command` value. The capability-aware parking
+  implementation in commit `87ff737` already supports this; the test just
+  needs to assert it.
+
+### Task 60 (wire-in) — TODO when resumed
+
+- Replace the 6 stub references in `NodeInspector.tsx` (`StubExecution`,
+  `StubProvider`, `StubTools`, `StubHooks`, `StubSkillsMcp`, `StubAdvanced`)
+  with the real tab imports from Tasks 57–59.
+- Wire Canvas selection into `setSelectedNodeId`. Plan said "Task 36 wired
+  this" — it didn't. The store fields exist (added in commit landing
+  Task 55); Canvas needs a `onNodeClick` / `onSelectionChange` handler that
+  calls `setSelectedNodeId(node.id)` (and `null` on background click).
+- Mount `<NodeInspector />` in `WorkflowBuilder.tsx` at the existing
+  `{/* Phase 4 fills in NodeInspector */}` placeholder (line 57 at start of
+  this session).
+
+---
+
+## 9. Resolved decisions (record so future-you doesn't re-litigate)
 
 - **lodash.mergewith over lodash.merge** — needed for customizer hook (commit `0055122`).
 - **Unified routing for updateNodeData** — patches partition via pickBaseFields and apply per-bucket. (User decision, this session.)
