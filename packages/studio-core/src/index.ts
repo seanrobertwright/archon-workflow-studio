@@ -14,6 +14,7 @@ export { workflowDefinitionSchema } from './schemas';
 export { VARIANT_IDS, type VariantId } from './nodes/registry';
 
 export { WorkflowBuilder, type WorkflowBuilderProps } from './components/WorkflowBuilder';
+export { NodeInspector } from './components/inspector/NodeInspector';
 
 export { fromWorkflowDefinition } from './exporter/fromWorkflowDefinition';
 export { toWorkflowDefinition } from './exporter/toWorkflowDefinition';

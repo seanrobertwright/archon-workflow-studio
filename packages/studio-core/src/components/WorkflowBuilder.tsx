@@ -10,6 +10,7 @@ import { usePositionPersistence } from '../hooks/usePositionPersistence';
 import { PositionProvider } from '../hooks/PositionContext';
 import { Canvas } from './Canvas';
 import { NodeLibrary } from './NodeLibrary';
+import { NodeInspector } from './inspector/NodeInspector';
 import { Toolbar } from './Toolbar';
 import { StudioErrorBoundary } from './StudioErrorBoundary';
 import styles from './WorkflowBuilder.module.css';
@@ -53,9 +54,9 @@ export function WorkflowBuilder({
                     <Canvas />
                   </ReactFlowProvider>
                 </main>
-                <aside className={styles.inspector} aria-label="Node inspector">
-                  {/* Phase 4 fills in NodeInspector */}
-                </aside>
+                <div className={styles.inspector}>
+                  <NodeInspector />
+                </div>
               </div>
             </PositionProvider>
           </StudioErrorBoundary>

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { WorkflowBuilder } from '../../src/components/WorkflowBuilder';
 import { useBuilderStore } from '../../src/store/builder-store';
 import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
@@ -72,5 +72,44 @@ describe('WorkflowBuilder', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /reset layout/i }));
     expect(globalThis.localStorage.getItem('studio:positions:__dev__::__dev__::demo')).toBeNull();
+  });
+
+  it('renders the NodeInspector empty state when no node is selected', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [{ id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} }],
+    });
+    render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    expect(screen.getByTestId('inspector-empty')).toBeDefined();
+  });
+
+  it('inspector follows store selection — RenameField appears when a node is selected', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [{ id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} }],
+    });
+    render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    act(() => {
+      useBuilderStore.getState().setSelectedNodeId('only');
+    });
+    // RenameField renders a labelled input "Node ID"; presence proves the
+    // inspector swapped from the empty state to the populated state.
+    expect(screen.getByLabelText(/node id/i)).toBeDefined();
   });
 });
