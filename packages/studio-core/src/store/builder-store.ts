@@ -3,6 +3,8 @@ import type { BuilderNode } from '../nodes/shared/types';
 import { defaultRegistry } from '../nodes/default-registry';
 import type { VariantId } from '../nodes/registry';
 import { makeUniqueId } from '../nodes/shared/makeUniqueId';
+import { pickBaseFields } from '../nodes/shared/pickBaseFields';
+import { mergePatch } from './mergePatch';
 
 export interface WorkflowMeta {
   name: string;
@@ -41,6 +43,24 @@ export interface BuilderState {
     options?: { idHintOverride?: string; dataPatch?: Record<string, unknown> },
   ) => string;
   updateNode: (id: string, patch: Partial<BuilderNode>) => void;
+  /**
+   * Patch a node's editable fields by routing each key to its correct storage
+   * bucket (data / base / unknown) via pickBaseFields, deep-merging via
+   * mergePatch. Inspector tabs call this with any field regardless of origin.
+   * `null` in the patch deletes the key from its bucket.
+   */
+  updateNodeData: (id: string, patch: Record<string, unknown>) => void;
+  /**
+   * Migrate a node to a different variant. Variant-specific fields the target
+   * cannot represent are parked in `data._unknown._converted_from`. When the
+   * target variant has `honorsAiFields: false` (bash, script, cancel, approval),
+   * AI base fields are also parked. Flow-control base fields (depends_on,
+   * when, retry, hooks, etc.) are kept regardless.
+   *
+   * No-op if `id`'s current variant already equals `newVariantId`. Throws on
+   * unknown id or unknown variant id.
+   */
+  convertVariant: (id: string, newVariantId: VariantId) => void;
   deleteNodes: (ids: string[]) => void;
 
   connect: (source: string, target: string) => void;
@@ -86,6 +106,120 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
     set((s) => ({
       nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
     })),
+
+  updateNodeData: (id, patch) => {
+    const node = get().nodes.find((n) => n.id === id);
+    if (!node) throw new Error(`updateNodeData: '${id}' not found`);
+    const partition = pickBaseFields(patch, node.variant);
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              data: mergePatch(n.data as Record<string, unknown>, partition.variantSpecific),
+              base: mergePatch(n.base, partition.base),
+              unknown: mergePatch(n.unknown, partition.unknown),
+            }
+          : n,
+      ),
+    }));
+  },
+
+  convertVariant: (id, newVariantId) => {
+    const node = get().nodes.find((n) => n.id === id);
+    if (!node) throw new Error(`convertVariant: '${id}' not found`);
+    const target = defaultRegistry[newVariantId];
+    if (!target) throw new Error(`convertVariant: unknown variant '${newVariantId}'`);
+    if (node.variant === newVariantId) return;
+
+    // Re-classify CURRENT variant-specific data under the TARGET variant's lens.
+    // Anything the target variant cannot accept lands in `parkedFromData`.
+    const currentDagShape = (node.data as Record<string, unknown>) ?? {};
+    const reclassified = pickBaseFields(currentDagShape, newVariantId);
+    const parkedFromData: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(currentDagShape)) {
+      if (k === '_unknown') continue;
+      if (
+        !(k in reclassified.variantSpecific) &&
+        !(k in reclassified.base) &&
+        !(k in reclassified.unknown)
+      ) {
+        parkedFromData[k] = v;
+      }
+    }
+    // pickBaseFields routes "stranger" keys into `unknown`. For convertVariant,
+    // anything that was variant-specific to the source but not to the target
+    // should be PARKED, not silently demoted to unknown. Move them.
+    const sourceVariant = defaultRegistry[node.variant];
+    const sourceVarSpecificKeys = new Set(
+      Object.keys((sourceVariant.toDag(node.data as never) as Record<string, unknown>) ?? {}),
+    );
+    for (const k of Object.keys(reclassified.unknown)) {
+      if (sourceVarSpecificKeys.has(k)) {
+        parkedFromData[k] = reclassified.unknown[k];
+        delete reclassified.unknown[k];
+      }
+    }
+
+    // Capability-aware base-field parking: when target ignores AI fields, strip
+    // and park them. Flow-control base fields stay.
+    const AI_BASE_KEYS = new Set([
+      'provider',
+      'model',
+      'allowed_tools',
+      'denied_tools',
+      'output_format',
+      'effort',
+      'thinking',
+      'maxBudgetUsd',
+      'systemPrompt',
+      'fallbackModel',
+      'betas',
+      'agents',
+      'mcp',
+      'skills',
+      'context',
+    ]);
+    const newBase: Record<string, unknown> = { ...node.base };
+    const parkedFromBase: Record<string, unknown> = {};
+    if (!target.capabilities.honorsAiFields) {
+      for (const k of Object.keys(newBase)) {
+        if (AI_BASE_KEYS.has(k)) {
+          parkedFromBase[k] = newBase[k];
+          delete newBase[k];
+        }
+      }
+    }
+
+    const previousUnknown =
+      ((node.data as Record<string, unknown>)?._unknown as Record<string, unknown>) ?? {};
+    const newData: Record<string, unknown> = {
+      ...(target.createDefault() as Record<string, unknown>),
+      ...reclassified.variantSpecific,
+      _unknown: {
+        ...previousUnknown,
+        _converted_from: {
+          variant: node.variant,
+          ...parkedFromData,
+          ...parkedFromBase,
+        },
+      },
+    };
+
+    set((s) => ({
+      nodes: s.nodes.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              variant: newVariantId,
+              data: newData,
+              base: newBase,
+              unknown: mergePatch(n.unknown, reclassified.unknown),
+            }
+          : n,
+      ),
+    }));
+  },
 
   deleteNodes: (ids) => {
     const idSet = new Set(ids);
