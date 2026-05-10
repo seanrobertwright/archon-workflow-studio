@@ -21,9 +21,12 @@ export interface LoadWorkflowInput {
 export interface BuilderState {
   workflow: WorkflowMeta | null;
   nodes: BuilderNode[];
+  /** Currently-inspected node id. Driven by Canvas selection (wired in Task 60). */
+  selectedNodeId: string | null;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
+  setSelectedNodeId: (id: string | null) => void;
 
   setWorkflowName: (name: string) => void;
   setWorkflowDescription: (description: string) => void;
@@ -71,9 +74,11 @@ export interface BuilderState {
 export const useBuilderStore = create<BuilderState>((set, get) => ({
   workflow: null,
   nodes: [],
+  selectedNodeId: null,
 
   loadWorkflow: ({ meta, nodes }) => set({ workflow: meta, nodes }),
-  clearWorkflow: () => set({ workflow: null, nodes: [] }),
+  clearWorkflow: () => set({ workflow: null, nodes: [], selectedNodeId: null }),
+  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
 
   setWorkflowName: (name) => set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
   setWorkflowDescription: (description) =>
