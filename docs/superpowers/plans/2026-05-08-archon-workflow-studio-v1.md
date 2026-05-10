@@ -7802,3 +7802,2054 @@ git push origin phase-3
 - [x] 3 starter snippets (curated bundled defaults) + 3 pattern snippets (classify-then-branch, fan-out-collect, loop-until-signal) + fixture-validity test (Task 50)
 - [x] Snippets section in `NodeLibrary` + Canvas `onDrop` snippet branch (Task 51)
 - [ ] Manual visual smoke + screenshot + push + `phase-3` tag (Task 52) — automated checks green; manual smoke + screenshot + push pending user
+
+---
+
+## Chunk 6: Phase 4 — NodeInspector + variant inspectors + cascading rename
+
+**Goal:** Fill the right-rail inspector. Selection on the Canvas drives a variant-aware tabbed editor whose General tab is variant-specific and whose base-field tabs (Execution / Provider / Tools / Hooks / Skills+MCP / Advanced) are shared across variants and visibility-gated by `variant.capabilities`. Edits go through a deep-merge store action so the `_unknown` forward-compat bag and unknown sub-keys on known fields survive every round-trip. The cascading-rename engine (`store.renameNode`, landed Phase 1) gets its first real UI consumer via an inline ID input on the General header. The visual `when:` builder and `$nodeId.output` autocomplete remain Phase 5 — Phase 4 ships a raw textarea for `when:` and plain `<textarea>` body fields. Variant conversion lands as a store action (`convertVariant`) with deep-merge migration semantics + a component test, but the UI affordance is deferred to Phase 8 polish (per scope decision recorded with this plan).
+
+**Architecture:** A single `<NodeInspector>` component reads the selected node id from the Zustand store and resolves the active `VariantDefinition`. Its tab list is derived purely from `variant.capabilities` (no per-component `if (variant === 'bash')` branching). The General tab is rendered from `variant.Inspector`; base tabs are shared components that consume `InspectorProps<TData>` and emit field-level patches via `store.updateNodeData(id, patch)`. Patches are applied with `lodash.merge` semantics so any sub-key the studio doesn't know about (foreign hooks event types, novel `model_settings` keys, etc.) is never clobbered. The Advanced tab's Raw fields panel renders `_unknown` as JSON and lets power users edit it directly.
+
+**Tech Stack:** React 19 / TypeScript / Zustand (existing); `lodash.merge` (added — small dep, well-known semantics); `@testing-library/react` + `bun:test` (existing). No new runtime deps beyond `lodash.merge`.
+
+### Task 52.5: Phase-3 reality check (read-only verification)
+
+**Files:**
+- None (verification only).
+
+Mirrors the Phase-2 reality check (Task 41.5). Before touching a Phase-4 file, confirm that Phase-3 actually landed the contracts Phase 4 depends on. The plan was written assuming: (a) `VariantDefinition.Inspector` is a reserved slot, (b) `renameNode` exists in the store with cascading semantics, (c) `WorkflowBuilder.tsx` has the `{/* Phase 4 fills in NodeInspector */}` placeholder, (d) per-variant `index.ts` files export a registered variant entry whose `Inspector` field is currently the only un-filled slot, (e) the registry exports a typed `VariantId` union covering all 7 variants. Any deviation is documented and the deviating task is rewritten before execution.
+
+- [ ] **Step 1: Confirm `VariantDefinition` slot reserved for `Inspector`**
+
+```bash
+grep -n "Inspector" packages/studio-core/src/nodes/shared/types.ts
+```
+Expected: a comment or optional field signposting `Inspector` as the Phase-4 deliverable. If the slot is already filled with a non-trivial component, halt and reconcile — Phase 3 may have over-shipped.
+
+- [ ] **Step 2: Confirm `renameNode` cascades through `depends_on` AND `when:` strings**
+
+```bash
+grep -n "renameNode\|depends_on\|when" packages/studio-core/src/store/builder-store.ts | head -50
+```
+Expected: `renameNode` rewrites `depends_on`, `when` string atom references (`$<oldId>.output…`), and any `$<oldId>` body references in prompt/bash/script/loop-prompt/approval-message bodies. If body-reference rewriting is missing, **stop** — fold the gap into Task 53 Step 2 (or escalate as a separate Phase-1-debt task) before continuing. (Spec §5.2 last paragraph + §7.4 are the contract.)
+
+- [ ] **Step 3: Confirm `WorkflowBuilder.tsx` exposes the inspector mount point**
+
+```bash
+grep -n "NodeInspector\|Phase 4" packages/studio-core/src/components/WorkflowBuilder.tsx
+```
+Expected: a placeholder JSX comment in the right-rail slot. If `<NodeInspector />` is already mounted (against an empty file), Task 60's wire-in step is a no-op — note that and continue.
+
+- [ ] **Step 4: Confirm every variant module already exports a registered `VariantDefinition` with `Inspector` either absent or set to a placeholder**
+
+```bash
+for v in command prompt bash script loop approval cancel; do
+  echo "=== $v ==="
+  grep -nE "Inspector|export const|register" "packages/studio-core/src/nodes/$v/index.ts"
+done
+```
+Expected: each `index.ts` calls the registry with at least `id`, `library`, `Renderer`, `schema`, `createDefault`, `fromDagNode`, `toDagNode`, and either omits `Inspector` (TS-permitted) or assigns a placeholder. If a variant is missing entirely from the registry, stop and reconcile.
+
+- [ ] **Step 5: Confirm `VariantId` is a discriminated union of the 7 variant ids**
+
+```bash
+grep -n "type VariantId\|VariantId =" packages/studio-core/src/nodes/shared/types.ts
+```
+Expected: `type VariantId = 'command' | 'prompt' | 'bash' | 'script' | 'loop' | 'approval' | 'cancel'`. If the union shape differs (e.g., enum, brand), adapt the per-variant `Inspector` registration in Task 56 accordingly.
+
+- [ ] **Step 6: Run the green baseline**
+
+```bash
+bun --filter='*' run test
+bun --filter='*' run build
+bun run lint
+bun run format:check
+bun run check-schema-drift
+```
+Expected: all green at the post-Phase-3 baseline. Phase 4 starts from green or not at all.
+
+- [ ] **Step 7: Record reality-check findings**
+
+If anything in Steps 1–5 deviated from the plan's assumptions, write the deviation into a short reality-check note at the top of the next task you start. (No commit yet — the check is read-only.)
+
+---
+
+### Task 53: Inspector contract + deep-merge `updateNodeData` + `convertVariant` store action
+
+**Files:**
+- Modify: `packages/studio-core/src/nodes/shared/types.ts` — fill the `Inspector: React.FC<InspectorProps<TData>>` slot in `VariantDefinition`; export `InspectorProps<TData>` and `InspectorTabId`; export `tabsForVariant(variant): InspectorTabId[]`.
+- Modify: `packages/studio-core/src/store/builder-store.ts` — replace shallow `updateNodeData` (if present) or add it; add `convertVariant(id, newVariantId)` action.
+- Create: `packages/studio-core/src/store/mergePatch.ts` — thin wrapper over `lodash.merge` with array-replace semantics (lodash's default merges arrays element-by-element, which we do *not* want for `allowed_tools` etc.).
+- Test: `packages/studio-core/tests/store/updateNodeData.spec.ts` — deep-merge preserves `_unknown` subkeys; array fields replace wholesale; `convertVariant` migrates compatible base fields and parks incompatible ones in `_unknown`.
+
+This task is the load-bearing one for everything downstream: every base-field tab in Tasks 57–59 emits patches that flow through `updateNodeData`, and the §12.2 "switching variant migrates data correctly" component test (Task 59) sits on top of `convertVariant`. We add `lodash.merge` (compact, well-understood) and wrap it because lodash's array-merge semantics (per-index merge) clobber semantically-replace fields like `allowed_tools`. Spec §6.3.2 calls out the merge semantics; spec §12.2 names the migration test as a Phase-4 deliverable.
+
+- [ ] **Step 1: Add `lodash.merge` to studio-core deps**
+
+```bash
+bun add --filter '@archon-studio/core' lodash.merge@^4
+bun add --filter '@archon-studio/core' --dev @types/lodash.merge@^4
+```
+Expected: `packages/studio-core/package.json` gains `lodash.merge` and `@types/lodash.merge`. Commit the manifest update + lockfile separately as `chore(deps): add lodash.merge for Inspector deep-merge`.
+
+- [ ] **Step 2: Write the failing `mergePatch` test**
+
+Create `packages/studio-core/tests/store/mergePatch.spec.ts`:
+
+```ts
+import { describe, it, expect } from 'bun:test';
+import { mergePatch } from '../../src/store/mergePatch';
+
+describe('mergePatch', () => {
+  it('deep-merges nested objects', () => {
+    const base = { model_settings: { temperature: 0.2, top_p: 0.9 }, _unknown: { future_key: 1 } };
+    const patch = { model_settings: { temperature: 0.7 } };
+    expect(mergePatch(base, patch)).toEqual({
+      model_settings: { temperature: 0.7, top_p: 0.9 },
+      _unknown: { future_key: 1 },
+    });
+  });
+
+  it('replaces arrays wholesale (does NOT merge by index)', () => {
+    const base = { allowed_tools: ['Read', 'Edit', 'Bash'] };
+    const patch = { allowed_tools: ['Read'] };
+    expect(mergePatch(base, patch)).toEqual({ allowed_tools: ['Read'] });
+  });
+
+  it('preserves _unknown subkeys when patch touches a sibling field', () => {
+    const base = { description: 'old', _unknown: { foreign: { nested: 'keep me' } } };
+    const patch = { description: 'new' };
+    expect(mergePatch(base, patch)).toEqual({
+      description: 'new',
+      _unknown: { foreign: { nested: 'keep me' } },
+    });
+  });
+
+  it('explicit null in patch deletes the key', () => {
+    const base = { timeout: 30, retry: { max: 3 } };
+    const patch = { timeout: null };
+    expect(mergePatch(base, patch)).toEqual({ retry: { max: 3 } });
+  });
+});
+```
+
+- [ ] **Step 3: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test mergePatch`
+Expected: module-not-found.
+
+- [ ] **Step 4: Implement `mergePatch`**
+
+Create `packages/studio-core/src/store/mergePatch.ts`:
+
+```ts
+import lodashMerge from 'lodash.merge';
+
+/**
+ * Deep-merge a patch onto a base value with two custom rules:
+ *   - Arrays are REPLACED wholesale (lodash's default per-index merge would
+ *     produce nonsense for fields like allowed_tools / disallowed_tools).
+ *   - `null` in the patch DELETES the corresponding key (allows the inspector
+ *     to clear an optional field without resorting to a separate delete action).
+ *
+ * Used by `builder-store.updateNodeData`. The forward-compat invariant of §6.3
+ * relies on this preserving keys that the patch never mentions.
+ */
+export function mergePatch<T extends Record<string, unknown>>(base: T, patch: Partial<T>): T {
+  // Pre-process: collect keys to delete (where patch[k] === null).
+  const result = lodashMerge({}, base, patch, (objVal, srcVal) => {
+    if (Array.isArray(srcVal)) return srcVal; // wholesale replace
+    return undefined; // fall through to lodash default (recursive merge)
+  }) as T;
+  for (const key of Object.keys(patch)) {
+    if ((patch as Record<string, unknown>)[key] === null) {
+      delete (result as Record<string, unknown>)[key];
+    }
+  }
+  return result;
+}
+```
+
+- [ ] **Step 5: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test mergePatch`
+Expected: 4 tests pass.
+
+- [ ] **Step 6: Write the failing `updateNodeData` deep-merge test**
+
+Create `packages/studio-core/tests/store/updateNodeData.spec.ts`:
+
+```ts
+import { describe, it, expect, beforeEach } from 'bun:test';
+import { useBuilderStore } from '../../src/store/builder-store';
+
+describe('builder-store.updateNodeData (deep-merge)', () => {
+  beforeEach(() => {
+    useBuilderStore.getState().clearWorkflow();
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        {
+          id: 'n1',
+          variant: 'command',
+          data: {
+            command: 'classify',
+            description: 'orig',
+            model_settings: { temperature: 0.2, top_p: 0.9 },
+            _unknown: { future_key: { nested: 'keep me' } },
+          },
+        },
+      ],
+    });
+  });
+
+  it('preserves _unknown when patching description', () => {
+    useBuilderStore.getState().updateNodeData('n1', { description: 'new' });
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    expect(node.data.description).toBe('new');
+    expect((node.data as any)._unknown).toEqual({ future_key: { nested: 'keep me' } });
+  });
+
+  it('deep-merges model_settings without dropping siblings', () => {
+    useBuilderStore.getState().updateNodeData('n1', { model_settings: { temperature: 0.7 } });
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    expect((node.data as any).model_settings).toEqual({ temperature: 0.7, top_p: 0.9 });
+  });
+
+  it('replaces arrays wholesale', () => {
+    useBuilderStore.getState().updateNodeData('n1', { allowed_tools: ['Read'] });
+    useBuilderStore.getState().updateNodeData('n1', { allowed_tools: ['Bash'] });
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    expect((node.data as any).allowed_tools).toEqual(['Bash']);
+  });
+});
+```
+
+- [ ] **Step 7: Update `updateNodeData` to use `mergePatch`**
+
+Modify `packages/studio-core/src/store/builder-store.ts`:
+
+```ts
+import { mergePatch } from './mergePatch';
+
+// inside the store factory:
+updateNodeData: (id, patch) => {
+  set((s) => ({
+    nodes: s.nodes.map((n) =>
+      n.id === id ? { ...n, data: mergePatch(n.data as Record<string, unknown>, patch as any) } : n,
+    ),
+  }));
+},
+```
+
+If the action signature does not yet exist, add it to the state interface at the top of the file: `updateNodeData: <V extends VariantId>(id: string, patch: Partial<VariantDataMap[V]>) => void;`.
+
+- [ ] **Step 8: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test updateNodeData`
+Expected: 3 tests pass. Re-run prior store tests too: `bun --filter='@archon-studio/core' test store` — expect all green.
+
+- [ ] **Step 9: Write the failing `convertVariant` test**
+
+Append to `packages/studio-core/tests/store/updateNodeData.spec.ts`:
+
+```ts
+describe('builder-store.convertVariant', () => {
+  beforeEach(() => {
+    useBuilderStore.getState().clearWorkflow();
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        {
+          id: 'n1',
+          variant: 'command',
+          data: {
+            command: 'classify',
+            description: 'orig',
+            timeout: 30,                 // base field, compatible with bash
+            provider: 'anthropic',       // AI-only field, NOT compatible with bash
+            allowed_tools: ['Read'],     // AI-only, NOT compatible with bash
+            _unknown: {},
+          },
+        },
+      ],
+    });
+  });
+
+  it('migrates compatible base fields and parks incompatible ones in _unknown', () => {
+    useBuilderStore.getState().convertVariant('n1', 'bash');
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    expect(node.variant).toBe('bash');
+    expect((node.data as any).timeout).toBe(30);              // base, kept
+    expect((node.data as any).command).toBeUndefined();        // command-only, dropped from top
+    expect((node.data as any).provider).toBeUndefined();       // AI, dropped from top
+    expect((node.data as any)._unknown).toMatchObject({
+      _converted_from: { variant: 'command', command: 'classify', provider: 'anthropic', allowed_tools: ['Read'] },
+    });
+  });
+
+  it('throws on unknown target variant', () => {
+    expect(() => useBuilderStore.getState().convertVariant('n1', 'nonexistent' as any)).toThrow();
+  });
+
+  it('throws on unknown node id', () => {
+    expect(() => useBuilderStore.getState().convertVariant('does-not-exist', 'bash')).toThrow();
+  });
+});
+```
+
+- [ ] **Step 10: Implement `convertVariant`**
+
+Modify `packages/studio-core/src/store/builder-store.ts`. Add to state interface:
+
+```ts
+convertVariant: (id: string, newVariantId: VariantId) => void;
+```
+
+Add to actions:
+
+```ts
+import { variantRegistry } from '../nodes/registry';
+import { pickBaseFields } from '../nodes/shared/pickBaseFields';
+
+convertVariant: (id, newVariantId) => {
+  const node = get().nodes.find((n) => n.id === id);
+  if (!node) throw new Error(`convertVariant: '${id}' not found`);
+  const target = variantRegistry[newVariantId];
+  if (!target) throw new Error(`convertVariant: unknown variant '${newVariantId}'`);
+  if (node.variant === newVariantId) return;
+
+  // Round-trip the existing data through fromDagNode/toDagNode of the SOURCE variant
+  // to obtain a flat DagNode body, then re-pick base fields under the TARGET variant's lens.
+  const sourceVariant = variantRegistry[node.variant];
+  const dagBody = sourceVariant.toDagNode(node.data as never);
+  const { base, unknown, variantSpecific } = pickBaseFields(
+    { id, ...dagBody } as never,
+    newVariantId,
+  );
+
+  const migrated = {
+    ...target.createDefault(),
+    ...base,
+    ...variantSpecific,
+    _unknown: {
+      ...(unknown ?? {}),
+      _converted_from: {
+        variant: node.variant,
+        // Stash anything the target variant cannot represent so it survives a future convert-back.
+        ...stripBaseFields(dagBody),
+      },
+    },
+  };
+
+  set((s) => ({
+    nodes: s.nodes.map((n) => (n.id === id ? { ...n, variant: newVariantId, data: migrated } : n)),
+  }));
+},
+```
+
+Add a `stripBaseFields` helper at the bottom of the file (or inline if pickBaseFields already exposes the inverse). The exact field set comes from the §6 base-field schema — Task 18 already enumerated it.
+
+- [ ] **Step 11: Run, expect green**
+
+Run: `bun --filter='@archon-studio/core' test updateNodeData`
+Expected: 6 tests pass total (3 deep-merge + 3 convert).
+
+- [ ] **Step 12: Fill the `Inspector` slot in `VariantDefinition` + define `InspectorProps` and `tabsForVariant`**
+
+Modify `packages/studio-core/src/nodes/shared/types.ts`. Update the variant contract and add the helpers:
+
+```ts
+import type { ReactElement } from 'react';
+
+export type InspectorTabId =
+  | 'general'
+  | 'execution'
+  | 'provider'
+  | 'tools'
+  | 'hooks'
+  | 'skills-mcp'
+  | 'advanced';
+
+export interface InspectorProps<TData> {
+  /** Node id — passed to store actions; never edited via this prop. */
+  id: string;
+  /** Live data slice from the store. */
+  data: TData;
+  /** Patch the node — deep-merged via `mergePatch`. */
+  onChange: (patch: Partial<TData>) => void;
+  /** Sibling node ids — for DependsOnEditor autocomplete. */
+  siblingIds: string[];
+}
+
+export interface VariantDefinition<TData> {
+  id: VariantId;
+  discriminator: keyof DagNode;
+  capabilities: {
+    honorsAiFields: boolean;
+    forbidsRetry: boolean;
+    requiresInteractive?: boolean;
+  };
+  library: { /* ... */ };
+  Renderer: React.FC<NodeProps<TData>>;
+  Inspector: React.FC<InspectorProps<TData>>;          // <-- Phase 4 fills this
+  schema: ZodSchema<TData>;
+  createDefault: () => TData;
+  fromDagNode: (raw: DagNode) => TData;
+  toDagNode: (data: TData) => Partial<DagNode>;
+  validate?: (data: TData, ctx: ValidateCtx) => Issue[];
+}
+
+/**
+ * Capability-driven tab visibility. Pure function — drives both the NodeInspector
+ * tab list and the §12.2 "tab visibility" component test without ad-hoc branching.
+ */
+export function tabsForVariant(v: VariantDefinition<unknown>): InspectorTabId[] {
+  const tabs: InspectorTabId[] = ['general'];
+  tabs.push('execution');
+  if (v.capabilities.honorsAiFields) {
+    tabs.push('provider', 'tools', 'hooks', 'skills-mcp');
+  }
+  tabs.push('advanced');
+  return tabs;
+}
+```
+
+- [ ] **Step 13: Run typecheck — registry will now require every variant module to provide `Inspector`**
+
+Run: `bun --filter='@archon-studio/core' run typecheck`
+Expected: 7 errors — one per variant `index.ts`, each saying `Inspector` is missing. **This is intentional.** Tasks 56–59 fill these in. Add a placeholder for now so the typecheck stays green between tasks:
+
+In each `packages/studio-core/src/nodes/<variant>/index.ts`, temporarily add:
+
+```ts
+const TodoInspector: React.FC<InspectorProps<VariantData>> = () => (
+  <div data-testid="inspector-todo">Inspector for {/* variant id */} pending Phase 4 wire-up</div>
+);
+// register({ ..., Inspector: TodoInspector });
+```
+
+This unblocks the rest of the task graph; Tasks 56–59 replace each placeholder.
+
+- [ ] **Step 14: Run the full test suite + typecheck + build**
+
+```bash
+bun --filter='@archon-studio/core' run typecheck
+bun --filter='*' run test
+bun --filter='*' run build
+```
+Expected: all green.
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): contract slot + deep-merge updateNodeData + convertVariant"
+```
+
+---
+
+### Task 54: Shared inspector primitives — `Field`, `RenameField`, `DependsOnEditor`, `JsonField`
+
+**Files:**
+- Create: `packages/studio-core/src/components/inspector/shared/Field.tsx`
+- Create: `packages/studio-core/src/components/inspector/shared/RenameField.tsx`
+- Create: `packages/studio-core/src/components/inspector/shared/DependsOnEditor.tsx`
+- Create: `packages/studio-core/src/components/inspector/shared/JsonField.tsx`
+- Create: `packages/studio-core/src/components/inspector/shared/index.ts` — barrel
+- Test: `packages/studio-core/tests/components/inspector/shared/RenameField.spec.tsx`
+- Test: `packages/studio-core/tests/components/inspector/shared/DependsOnEditor.spec.tsx`
+- Test: `packages/studio-core/tests/components/inspector/shared/JsonField.spec.tsx`
+
+These are the four reusable building blocks every tab uses. Keeping them small, controlled, and accessible up-front prevents Tasks 56–59 from re-inventing labelling, error states, and chip-list keyboard handling six times. `RenameField` is the cascading-rename UI surface — it calls `store.renameNode` which already cascades through `depends_on`, `when:`, and body references (verified Task 52.5 Step 2). `DependsOnEditor` is the "chip-list backup for offscreen parents" called out in spec §7.4.
+
+- [ ] **Step 1: Write the failing `RenameField` test**
+
+Create `packages/studio-core/tests/components/inspector/shared/RenameField.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll, beforeEach } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { RenameField } from '../../../../src/components/inspector/shared/RenameField';
+import { useBuilderStore } from '../../../../src/store/builder-store';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+beforeEach(() => useBuilderStore.getState().clearWorkflow());
+
+describe('RenameField', () => {
+  beforeEach(() => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        { id: 'classify', variant: 'command', data: { command: 'classify', _unknown: {} } as never },
+        { id: 'review', variant: 'command', data: { command: 'review', depends_on: ['classify'], _unknown: {} } as never },
+      ],
+    });
+  });
+
+  it('renames the node and cascades through depends_on', () => {
+    render(<RenameField id="classify" />);
+    const input = screen.getByLabelText(/node id/i);
+    fireEvent.change(input, { target: { value: 'classify-v2' } });
+    fireEvent.blur(input);
+
+    const ids = useBuilderStore.getState().nodes.map((n) => n.id);
+    expect(ids).toContain('classify-v2');
+    const reviewNode = useBuilderStore.getState().nodes.find((n) => n.id === 'review')!;
+    expect((reviewNode.data as any).depends_on).toEqual(['classify-v2']);
+  });
+
+  it('shows a collision error and does not rename', () => {
+    render(<RenameField id="classify" />);
+    const input = screen.getByLabelText(/node id/i);
+    fireEvent.change(input, { target: { value: 'review' } });
+    fireEvent.blur(input);
+    expect(screen.getByText(/already exists/i)).toBeDefined();
+    const ids = useBuilderStore.getState().nodes.map((n) => n.id).sort();
+    expect(ids).toEqual(['classify', 'review']);
+  });
+
+  it('shows an invalid-id error for empty / whitespace / illegal chars', () => {
+    render(<RenameField id="classify" />);
+    const input = screen.getByLabelText(/node id/i);
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+    expect(screen.getByText(/invalid id/i)).toBeDefined();
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test RenameField`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement `Field`**
+
+Create `packages/studio-core/src/components/inspector/shared/Field.tsx`:
+
+```tsx
+import type { ReactNode } from 'react';
+
+interface FieldProps {
+  label: string;
+  htmlFor?: string;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+}
+
+export function Field({ label, htmlFor, hint, error, children }: FieldProps) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+      <label htmlFor={htmlFor} style={labelStyle}>{label}</label>
+      {children}
+      {hint && !error && <span style={hintStyle}>{hint}</span>}
+      {error && <span style={errorStyle} role="alert">{error}</span>}
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+  color: 'var(--studio-muted)',
+};
+const hintStyle: React.CSSProperties = { fontSize: 11, color: 'var(--studio-muted)' };
+const errorStyle: React.CSSProperties = { fontSize: 11, color: 'var(--studio-danger, #ef4444)' };
+```
+
+- [ ] **Step 4: Implement `RenameField`**
+
+Create `packages/studio-core/src/components/inspector/shared/RenameField.tsx`:
+
+```tsx
+import { useState, useEffect } from 'react';
+import { useBuilderStore } from '../../../store/builder-store';
+import { Field } from './Field';
+
+const ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+interface RenameFieldProps { id: string; }
+
+export function RenameField({ id }: RenameFieldProps) {
+  const [draft, setDraft] = useState(id);
+  const [error, setError] = useState<string | undefined>();
+  useEffect(() => { setDraft(id); setError(undefined); }, [id]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next === id) return;
+    if (!ID_PATTERN.test(next)) {
+      setError('Invalid id — must start with a letter; letters / digits / `_` / `-` only.');
+      setDraft(id);
+      return;
+    }
+    const exists = useBuilderStore.getState().nodes.some((n) => n.id === next);
+    if (exists) {
+      setError(`Id '${next}' already exists.`);
+      setDraft(id);
+      return;
+    }
+    try {
+      useBuilderStore.getState().renameNode(id, next);
+      setError(undefined);
+    } catch (e) {
+      setError((e as Error).message);
+      setDraft(id);
+    }
+  };
+
+  return (
+    <Field label="Node ID" htmlFor={`rename-${id}`} hint="Renames cascade through depends_on, when:, and $id.output references." error={error}>
+      <input
+        id={`rename-${id}`}
+        aria-label="Node ID"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        style={{ padding: '6px 8px', fontFamily: 'var(--studio-mono)', fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)', border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)' }}
+      />
+    </Field>
+  );
+}
+```
+
+- [ ] **Step 5: Run, expect `RenameField` green**
+
+Run: `bun --filter='@archon-studio/core' test RenameField`
+Expected: 3 tests pass.
+
+- [ ] **Step 6: Write + implement `DependsOnEditor`**
+
+Test (`packages/studio-core/tests/components/inspector/shared/DependsOnEditor.spec.tsx`):
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { DependsOnEditor } from '../../../../src/components/inspector/shared/DependsOnEditor';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+
+describe('DependsOnEditor', () => {
+  it('renders a chip per existing dependency', () => {
+    render(<DependsOnEditor value={['classify', 'review']} siblingIds={['classify','review','dispatch']} onChange={() => {}} />);
+    expect(screen.getByText('classify')).toBeDefined();
+    expect(screen.getByText('review')).toBeDefined();
+  });
+
+  it('removes a chip on click and emits new array', () => {
+    let captured: string[] = [];
+    render(<DependsOnEditor value={['classify','review']} siblingIds={['classify','review']} onChange={(v) => { captured = v; }} />);
+    fireEvent.click(screen.getByLabelText(/remove classify/i));
+    expect(captured).toEqual(['review']);
+  });
+
+  it('autocompletes from siblingIds on add', () => {
+    let captured: string[] = [];
+    render(<DependsOnEditor value={[]} siblingIds={['classify','review','dispatch']} onChange={(v) => { captured = v; }} />);
+    const input = screen.getByLabelText(/add dependency/i);
+    fireEvent.change(input, { target: { value: 'rev' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(captured).toEqual(['review']);
+  });
+
+  it('rejects unknown ids', () => {
+    let captured: string[] = [];
+    render(<DependsOnEditor value={[]} siblingIds={['classify']} onChange={(v) => { captured = v; }} />);
+    const input = screen.getByLabelText(/add dependency/i);
+    fireEvent.change(input, { target: { value: 'nope' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(captured).toEqual([]);
+    expect(screen.getByText(/unknown id/i)).toBeDefined();
+  });
+});
+```
+
+Implementation (`packages/studio-core/src/components/inspector/shared/DependsOnEditor.tsx`):
+
+```tsx
+import { useState, useMemo } from 'react';
+import { Field } from './Field';
+
+interface Props {
+  value: string[];
+  siblingIds: string[];
+  onChange: (next: string[]) => void;
+}
+
+export function DependsOnEditor({ value, siblingIds, onChange }: Props) {
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | undefined>();
+  const candidates = useMemo(() =>
+    siblingIds.filter((s) => !value.includes(s) && (draft === '' || s.startsWith(draft))),
+    [siblingIds, value, draft],
+  );
+
+  const remove = (id: string) => onChange(value.filter((v) => v !== id));
+  const add = () => {
+    const next = draft.trim();
+    if (!next) return;
+    const match = candidates.find((c) => c === next) ?? candidates[0];
+    if (!match) { setError(`Unknown id '${next}'.`); return; }
+    onChange([...value, match]);
+    setDraft(''); setError(undefined);
+  };
+
+  return (
+    <Field label="Depends on" hint="Type or pick parent node ids. Useful for off-screen dependencies." error={error}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+        {value.map((id) => (
+          <span key={id} style={chipStyle}>
+            {id}
+            <button type="button" aria-label={`Remove ${id}`} onClick={() => remove(id)} style={chipRemoveStyle}>×</button>
+          </span>
+        ))}
+        <input
+          aria-label="Add dependency"
+          list={`deps-${siblingIds.length}`}
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setError(undefined); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="add…"
+          style={{ flex: '1 1 80px', minWidth: 80, padding: '4px 6px', fontSize: 12, background: 'transparent', color: 'var(--studio-fg)', border: 'none', outline: 'none' }}
+        />
+        <datalist id={`deps-${siblingIds.length}`}>
+          {candidates.map((c) => <option key={c} value={c} />)}
+        </datalist>
+      </div>
+    </Field>
+  );
+}
+
+const chipStyle: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 12, background: 'var(--studio-bg-elevated)', border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)' };
+const chipRemoveStyle: React.CSSProperties = { background: 'transparent', border: 'none', color: 'var(--studio-muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 };
+```
+
+- [ ] **Step 7: Write + implement `JsonField`**
+
+Test (`packages/studio-core/tests/components/inspector/shared/JsonField.spec.tsx`):
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { JsonField } from '../../../../src/components/inspector/shared/JsonField';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+
+describe('JsonField', () => {
+  it('emits parsed object on valid JSON blur', () => {
+    let captured: unknown;
+    render(<JsonField label="Settings" value={{ a: 1 }} onChange={(v) => { captured = v; }} />);
+    const ta = screen.getByLabelText(/settings/i);
+    fireEvent.change(ta, { target: { value: '{"a": 2, "b": 3}' } });
+    fireEvent.blur(ta);
+    expect(captured).toEqual({ a: 2, b: 3 });
+  });
+
+  it('shows parse error and does NOT emit on invalid JSON', () => {
+    let calls = 0;
+    render(<JsonField label="Settings" value={{}} onChange={() => { calls += 1; }} />);
+    const ta = screen.getByLabelText(/settings/i);
+    fireEvent.change(ta, { target: { value: '{a: 2}' } });
+    fireEvent.blur(ta);
+    expect(screen.getByText(/invalid json/i)).toBeDefined();
+    expect(calls).toBe(0);
+  });
+});
+```
+
+Implementation (`packages/studio-core/src/components/inspector/shared/JsonField.tsx`):
+
+```tsx
+import { useState, useEffect } from 'react';
+import { Field } from './Field';
+
+interface Props {
+  label: string;
+  value: unknown;
+  onChange: (next: unknown) => void;
+  hint?: string;
+}
+
+export function JsonField({ label, value, onChange, hint }: Props) {
+  const [draft, setDraft] = useState(() => JSON.stringify(value ?? {}, null, 2));
+  const [error, setError] = useState<string | undefined>();
+  useEffect(() => { setDraft(JSON.stringify(value ?? {}, null, 2)); setError(undefined); }, [value]);
+
+  const commit = () => {
+    try {
+      const parsed = JSON.parse(draft);
+      setError(undefined);
+      onChange(parsed);
+    } catch (e) {
+      setError(`Invalid JSON: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <Field label={label} hint={hint} error={error}>
+      <textarea
+        aria-label={label}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        rows={Math.min(12, draft.split('\n').length + 1)}
+        style={{ fontFamily: 'var(--studio-mono)', fontSize: 12, padding: 8, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)', border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)', resize: 'vertical' }}
+      />
+    </Field>
+  );
+}
+```
+
+- [ ] **Step 8: Add barrel export**
+
+Create `packages/studio-core/src/components/inspector/shared/index.ts`:
+
+```ts
+export { Field } from './Field';
+export { RenameField } from './RenameField';
+export { DependsOnEditor } from './DependsOnEditor';
+export { JsonField } from './JsonField';
+```
+
+- [ ] **Step 9: Run all primitive tests + typecheck**
+
+```bash
+bun --filter='@archon-studio/core' test inspector/shared
+bun --filter='@archon-studio/core' run typecheck
+```
+Expected: 9 tests pass (3 RenameField + 4 DependsOnEditor + 2 JsonField); typecheck green.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): shared primitives — Field, RenameField, DependsOnEditor, JsonField"
+```
+
+---
+
+### Task 55: `NodeInspector` shell + `InspectorTabs` (capability-driven) + selection wiring + empty state
+
+**Files:**
+- Create: `packages/studio-core/src/components/inspector/NodeInspector.tsx`
+- Create: `packages/studio-core/src/components/inspector/NodeInspector.module.css`
+- Create: `packages/studio-core/src/components/inspector/InspectorTabs.tsx`
+- Create: `packages/studio-core/src/hooks/useInspectorPatch.ts` — adapter that returns `(patch) => store.updateNodeData(id, patch)` bound to the selected node id.
+- Test: `packages/studio-core/tests/components/inspector/NodeInspector.spec.tsx` — empty state; correct tab list per variant; renders General + Advanced for bash; renders all six tabs for command; switching selection swaps tab content.
+
+This is the host. It reads `selectedNodeId` from the store, looks up the variant in the registry, derives the tab list via `tabsForVariant(variant)`, and slots `variant.Inspector` (General) plus the shared base-field tabs (filled in Tasks 57–59 — for now they are stubs that render their tab id as a heading so this shell can be tested in isolation). The empty state reads "Select a node to edit". The header bar contains `<RenameField id={selectedNodeId} />` and a small "Type: <variant>" pill (no convert action yet — store-only per scope decision). The fixed 320 px width matches spec §5.1.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `packages/studio-core/tests/components/inspector/NodeInspector.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll, beforeEach } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { NodeInspector } from '../../../src/components/inspector/NodeInspector';
+import { useBuilderStore } from '../../../src/store/builder-store';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+beforeEach(() => useBuilderStore.getState().clearWorkflow());
+
+const seedTwoVariants = () => {
+  useBuilderStore.getState().loadWorkflow({
+    meta: { name: 'wf', description: '', base: {}, unknown: {} },
+    nodes: [
+      { id: 'n-cmd', variant: 'command', data: { command: 'classify', _unknown: {} } as never },
+      { id: 'n-bash', variant: 'bash', data: { bash: 'echo hi', _unknown: {} } as never },
+    ],
+  });
+};
+
+describe('NodeInspector', () => {
+  it('renders the empty state when no node is selected', () => {
+    render(<NodeInspector />);
+    expect(screen.getByText(/select a node/i)).toBeDefined();
+  });
+
+  it('renders all 6 tabs for command (AI-honoring)', () => {
+    seedTwoVariants();
+    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    render(<NodeInspector />);
+    for (const tab of ['General', 'Execution', 'Provider', 'Tools', 'Hooks', 'Skills+MCP', 'Advanced']) {
+      expect(screen.getByRole('tab', { name: new RegExp(tab, 'i') })).toBeDefined();
+    }
+  });
+
+  it('renders General + Execution + Advanced only for bash (no AI tabs)', () => {
+    seedTwoVariants();
+    useBuilderStore.getState().setSelectedNodeId('n-bash');
+    render(<NodeInspector />);
+    expect(screen.getByRole('tab', { name: /general/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /execution/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
+    expect(screen.queryByRole('tab', { name: /provider/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /^tools$/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /hooks/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /skills/i })).toBeNull();
+  });
+
+  it('switches tab content on click', () => {
+    seedTwoVariants();
+    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    render(<NodeInspector />);
+    fireEvent.click(screen.getByRole('tab', { name: /advanced/i }));
+    // Tab panel marker — the Advanced stub renders this until Task 59.
+    expect(screen.getByTestId('tab-panel-advanced')).toBeDefined();
+  });
+
+  it('swaps content when selection changes', () => {
+    seedTwoVariants();
+    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    const { rerender } = render(<NodeInspector />);
+    expect(screen.getByRole('tab', { name: /provider/i })).toBeDefined();
+    useBuilderStore.getState().setSelectedNodeId('n-bash');
+    rerender(<NodeInspector />);
+    expect(screen.queryByRole('tab', { name: /provider/i })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+Run: `bun --filter='@archon-studio/core' test NodeInspector`
+Expected: module-not-found.
+
+- [ ] **Step 3: Implement `useInspectorPatch`**
+
+Create `packages/studio-core/src/hooks/useInspectorPatch.ts`:
+
+```ts
+import { useCallback } from 'react';
+import { useBuilderStore } from '../store/builder-store';
+
+export function useInspectorPatch(id: string) {
+  return useCallback(
+    (patch: Record<string, unknown>) => useBuilderStore.getState().updateNodeData(id, patch as never),
+    [id],
+  );
+}
+```
+
+- [ ] **Step 4: Implement `InspectorTabs`**
+
+Create `packages/studio-core/src/components/inspector/InspectorTabs.tsx`:
+
+```tsx
+import { useState, type ReactNode } from 'react';
+import type { InspectorTabId } from '../../nodes/shared/types';
+
+const LABELS: Record<InspectorTabId, string> = {
+  general: 'General',
+  execution: 'Execution',
+  provider: 'Provider',
+  tools: 'Tools',
+  hooks: 'Hooks',
+  'skills-mcp': 'Skills+MCP',
+  advanced: 'Advanced',
+};
+
+interface Props {
+  tabs: InspectorTabId[];
+  initial?: InspectorTabId;
+  /** Render function called with the active tab id; returns the panel content. */
+  children: (active: InspectorTabId) => ReactNode;
+}
+
+export function InspectorTabs({ tabs, initial, children }: Props) {
+  const [active, setActive] = useState<InspectorTabId>(initial ?? tabs[0]);
+  // If the active tab was removed (variant switch), fall back to the first tab.
+  const current = tabs.includes(active) ? active : tabs[0];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div role="tablist" aria-label="Inspector tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, borderBottom: '1px solid var(--studio-border)', padding: '0 8px' }}>
+        {tabs.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={current === t}
+            onClick={() => setActive(t)}
+            style={current === t ? activeTabStyle : tabStyle}
+          >
+            {LABELS[t]}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" data-testid={`tab-panel-${current}`} style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+        {children(current)}
+      </div>
+    </div>
+  );
+}
+
+const tabStyle: React.CSSProperties = {
+  padding: '8px 10px', fontSize: 12, fontWeight: 500,
+  background: 'transparent', color: 'var(--studio-muted)',
+  border: 'none', borderBottom: '2px solid transparent',
+  cursor: 'pointer',
+};
+const activeTabStyle: React.CSSProperties = {
+  ...tabStyle,
+  color: 'var(--studio-fg)',
+  borderBottomColor: 'var(--studio-accent, #8b5cf6)',
+};
+```
+
+- [ ] **Step 5: Implement `NodeInspector`**
+
+Create `packages/studio-core/src/components/inspector/NodeInspector.tsx`:
+
+```tsx
+import { useBuilderStore } from '../../store/builder-store';
+import { variantRegistry } from '../../nodes/registry';
+import { tabsForVariant } from '../../nodes/shared/types';
+import { RenameField } from './shared';
+import { InspectorTabs } from './InspectorTabs';
+import { useInspectorPatch } from '../../hooks/useInspectorPatch';
+
+// Stubs — replaced by Tasks 57–59. Each renders enough so InspectorTabs tests pass.
+const StubExecution = () => <div data-testid="tab-stub-execution">Execution (Task 57)</div>;
+const StubProvider = () => <div data-testid="tab-stub-provider">Provider (Task 57)</div>;
+const StubTools = () => <div data-testid="tab-stub-tools">Tools (Task 58)</div>;
+const StubHooks = () => <div data-testid="tab-stub-hooks">Hooks (Task 58)</div>;
+const StubSkillsMcp = () => <div data-testid="tab-stub-skills-mcp">Skills+MCP (Task 59)</div>;
+const StubAdvanced = () => <div data-testid="tab-stub-advanced">Advanced (Task 59)</div>;
+
+export function NodeInspector() {
+  const selectedId = useBuilderStore((s) => s.selectedNodeId);
+  const node = useBuilderStore((s) => (selectedId ? s.nodes.find((n) => n.id === selectedId) : undefined));
+  const siblingIds = useBuilderStore((s) => s.nodes.map((n) => n.id).filter((id) => id !== selectedId));
+  const onChange = useInspectorPatch(selectedId ?? '');
+
+  if (!selectedId || !node) {
+    return (
+      <aside style={shellStyle}>
+        <div style={emptyStyle}>Select a node to edit.</div>
+      </aside>
+    );
+  }
+
+  const variant = variantRegistry[node.variant];
+  if (!variant) {
+    return (
+      <aside style={shellStyle}>
+        <div style={emptyStyle}>Unknown variant '{node.variant}'.</div>
+      </aside>
+    );
+  }
+  const tabs = tabsForVariant(variant);
+  const General = variant.Inspector;
+
+  return (
+    <aside style={shellStyle} aria-label="Node inspector">
+      <header style={headerStyle}>
+        <RenameField id={selectedId} />
+        <span style={typePillStyle} title="Variant">{node.variant}</span>
+      </header>
+      <InspectorTabs tabs={tabs}>
+        {(active) => {
+          const panelProps = { id: selectedId, data: node.data, onChange, siblingIds };
+          switch (active) {
+            case 'general':    return <General {...(panelProps as never)} />;
+            case 'execution':  return <StubExecution />;
+            case 'provider':   return <StubProvider />;
+            case 'tools':      return <StubTools />;
+            case 'hooks':      return <StubHooks />;
+            case 'skills-mcp': return <StubSkillsMcp />;
+            case 'advanced':   return <StubAdvanced />;
+          }
+        }}
+      </InspectorTabs>
+    </aside>
+  );
+}
+
+const shellStyle: React.CSSProperties = {
+  width: 320, flexShrink: 0,
+  display: 'flex', flexDirection: 'column',
+  background: 'var(--studio-bg)', color: 'var(--studio-fg)',
+  borderLeft: '1px solid var(--studio-border)',
+};
+const headerStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+  gap: 8, padding: 12, borderBottom: '1px solid var(--studio-border)',
+};
+const typePillStyle: React.CSSProperties = {
+  fontSize: 11, padding: '2px 6px',
+  background: 'var(--studio-bg-elevated)', color: 'var(--studio-muted)',
+  border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)',
+  textTransform: 'uppercase', letterSpacing: '0.04em',
+  flexShrink: 0, marginTop: 18,
+};
+const emptyStyle: React.CSSProperties = {
+  padding: 24, fontSize: 13, color: 'var(--studio-muted)', textAlign: 'center',
+};
+```
+
+If `selectedNodeId` and `setSelectedNodeId` are not yet on the store (Phase 2 may have used a different name), add them now:
+
+```ts
+// state
+selectedNodeId: string | null;
+setSelectedNodeId: (id: string | null) => void;
+// initial: selectedNodeId: null,
+// action:
+setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+```
+
+Verify Canvas already calls `setSelectedNodeId` via React Flow's `onSelectionChange`/`onNodeClick` — Task 36 wired this. If naming differs, alias rather than rename.
+
+- [ ] **Step 6: Run the inspector test, expect green**
+
+Run: `bun --filter='@archon-studio/core' test NodeInspector`
+Expected: 5 tests pass.
+
+The test currently exercises `variant.Inspector` (the General slot). At this point each variant still has the `TodoInspector` placeholder from Task 53 Step 13 — that renders fine; we only assert the *tab list*, not the General body. Tasks 56 replace the placeholders.
+
+- [ ] **Step 7: Run full test suite + typecheck**
+
+```bash
+bun --filter='@archon-studio/core' run typecheck
+bun --filter='@archon-studio/core' test
+```
+Expected: all green.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): NodeInspector shell + capability-driven tabs"
+```
+
+---
+
+### Task 56: `GeneralTab` template + per-variant General sub-Inspectors (all 7 variants)
+
+**Files:**
+- Create: `packages/studio-core/src/nodes/shared/GeneralTab.tsx` — reusable General-tab frame (description + depends_on + when raw textarea + trigger_rule + slot for variant body).
+- Modify (one per variant): `packages/studio-core/src/nodes/<variant>/Inspector.tsx` — variant-specific body. Then update `<variant>/index.ts` to register `Inspector` (replacing the `TodoInspector` placeholder from Task 53).
+- Test (one per variant): `packages/studio-core/tests/nodes/<variant>/Inspector.spec.tsx` — variant body renders correct fields; edits emit the correct shape of patch.
+
+The General tab's *frame* is shared — id (rendered by NodeInspector header, not the General tab itself), description, depends_on, when (raw textarea — Phase 5 swaps), trigger_rule. The variant-specific *body* is what each variant module owns. We model command first as the canonical example, then propagate the pattern to the other 6.
+
+**Variant body fields (Phase 4 baseline, to be expanded in later phases):**
+
+| Variant | General body fields |
+|---------|----|
+| command | `command` (string), `args` (string list) |
+| prompt  | `prompt` (textarea — plain in P4) |
+| bash    | `bash` (textarea — body), `env` (key/value JSON) |
+| script  | `script` (string — name or path), `args` (string list) |
+| loop    | `loop.gate_message` (textarea), `loop.iteration_limit` (number), `loop.interactive` (checkbox), `loop.prompt` (textarea) |
+| approval | `approval.message` (textarea), `approval.approvers` (string list) |
+| cancel  | `cancel.reason` (textarea) |
+
+Body field names and shapes follow Archon's per-variant Zod schemas (mirror lives in `packages/studio-core/src/schemas/dag-node.ts`); deviating from those breaks round-trip. If a field shape conflicts with what the schema mirror declares, the schema is canonical — adjust the Inspector, not the schema.
+
+- [ ] **Step 1: Implement `GeneralTab` frame**
+
+Create `packages/studio-core/src/nodes/shared/GeneralTab.tsx`:
+
+```tsx
+import type { ReactNode } from 'react';
+import { Field, DependsOnEditor } from '../../components/inspector/shared';
+
+interface Props {
+  data: { description?: string; depends_on?: string[]; when?: string; trigger_rule?: string; [k: string]: unknown };
+  siblingIds: string[];
+  onChange: (patch: Record<string, unknown>) => void;
+  /** Variant-specific body fields. */
+  children: ReactNode;
+}
+
+export function GeneralTab({ data, siblingIds, onChange, children }: Props) {
+  return (
+    <>
+      {children}
+      <Field label="Description" htmlFor="gt-description">
+        <textarea
+          id="gt-description"
+          value={data.description ?? ''}
+          onChange={(e) => onChange({ description: e.target.value || null })}
+          rows={2}
+          style={textareaStyle}
+        />
+      </Field>
+      <DependsOnEditor
+        value={data.depends_on ?? []}
+        siblingIds={siblingIds}
+        onChange={(next) => onChange({ depends_on: next.length === 0 ? null : next })}
+      />
+      <Field
+        label="When (raw)"
+        htmlFor="gt-when"
+        hint="Phase 5 replaces this with a visual builder. Grammar: $id.output.field == 'value' joined by && / ||."
+      >
+        <textarea
+          id="gt-when"
+          value={data.when ?? ''}
+          onChange={(e) => onChange({ when: e.target.value || null })}
+          rows={2}
+          style={{ ...textareaStyle, fontFamily: 'var(--studio-mono)', fontSize: 12 }}
+        />
+      </Field>
+      <Field label="Trigger rule" htmlFor="gt-trigger" hint="all (default), any, manual.">
+        <select
+          id="gt-trigger"
+          value={(data.trigger_rule as string) ?? 'all'}
+          onChange={(e) => onChange({ trigger_rule: e.target.value === 'all' ? null : e.target.value })}
+          style={selectStyle}
+        >
+          <option value="all">all</option>
+          <option value="any">any</option>
+          <option value="manual">manual</option>
+        </select>
+      </Field>
+    </>
+  );
+}
+
+const textareaStyle: React.CSSProperties = {
+  padding: 8, fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)',
+  border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)', resize: 'vertical',
+};
+const selectStyle: React.CSSProperties = {
+  padding: '6px 8px', fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)',
+  border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)',
+};
+```
+
+- [ ] **Step 2: Write the failing `command` Inspector test**
+
+Create `packages/studio-core/tests/nodes/command/Inspector.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { CommandInspector } from '../../../src/nodes/command/Inspector';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+
+describe('CommandInspector (General body)', () => {
+  it('renders command + args fields', () => {
+    render(<CommandInspector id="n1" data={{ command: 'classify', _unknown: {} } as never} onChange={() => {}} siblingIds={[]} />);
+    expect(screen.getByLabelText(/^command$/i)).toBeDefined();
+    expect(screen.getByLabelText(/args/i)).toBeDefined();
+  });
+
+  it('emits patch on command edit', () => {
+    let captured: any;
+    render(<CommandInspector id="n1" data={{ command: 'classify', _unknown: {} } as never} onChange={(p) => { captured = p; }} siblingIds={[]} />);
+    fireEvent.change(screen.getByLabelText(/^command$/i), { target: { value: 'review' } });
+    expect(captured).toEqual({ command: 'review' });
+  });
+});
+```
+
+- [ ] **Step 3: Implement `CommandInspector`**
+
+Create `packages/studio-core/src/nodes/command/Inspector.tsx`:
+
+```tsx
+import type { InspectorProps } from '../shared/types';
+import type { CommandData } from './types';
+import { Field } from '../../components/inspector/shared';
+import { GeneralTab } from '../shared/GeneralTab';
+
+export function CommandInspector({ id, data, onChange, siblingIds }: InspectorProps<CommandData>) {
+  return (
+    <GeneralTab data={data as never} siblingIds={siblingIds} onChange={onChange as never}>
+      <Field label="Command" htmlFor={`cmd-${id}`} hint="Name of a command from /api/commands.">
+        <input
+          id={`cmd-${id}`}
+          aria-label="Command"
+          value={data.command ?? ''}
+          onChange={(e) => onChange({ command: e.target.value } as never)}
+          style={inputStyle}
+        />
+      </Field>
+      <Field label="Args" hint="One per line. Empty list = no args.">
+        <textarea
+          aria-label="Args"
+          value={(data.args ?? []).join('\n')}
+          onChange={(e) => {
+            const lines = e.target.value.split('\n').filter((l) => l.length > 0);
+            onChange({ args: lines.length === 0 ? null : lines } as never);
+          }}
+          rows={3}
+          style={textareaStyle}
+        />
+      </Field>
+    </GeneralTab>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  padding: '6px 8px', fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)',
+  border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)',
+};
+const textareaStyle: React.CSSProperties = {
+  padding: 8, fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)',
+  border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)', resize: 'vertical',
+};
+```
+
+Update `packages/studio-core/src/nodes/command/index.ts` — replace the `TodoInspector` placeholder with `import { CommandInspector } from './Inspector'` and pass `Inspector: CommandInspector` to the registry call.
+
+- [ ] **Step 4: Run, expect command Inspector tests pass**
+
+Run: `bun --filter='@archon-studio/core' test command/Inspector`
+Expected: 2 tests pass.
+
+- [ ] **Step 5: Repeat the pattern for the other 6 variants**
+
+For each of `prompt`, `bash`, `script`, `loop`, `approval`, `cancel`:
+
+1. Create `packages/studio-core/tests/nodes/<variant>/Inspector.spec.tsx` modelled on the command test, asserting the body fields from the Phase-4 baseline table above. Each test file has at least 2 tests: (a) renders all body fields, (b) emits a patch on the most distinctive field's edit.
+
+2. Create `packages/studio-core/src/nodes/<variant>/Inspector.tsx` modelled on `CommandInspector`. Use:
+   - `prompt`: one big `<textarea>` for `prompt`.
+   - `bash`: `<textarea>` for `bash`; `JsonField` for `env`.
+   - `script`: `<input>` for `script`; same args textarea as command.
+   - `loop`: nested `loop` object — `<textarea>` for `loop.prompt`, `<textarea>` for `loop.gate_message`, number `<input>` for `loop.iteration_limit`, checkbox for `loop.interactive`. **Important:** patches into nested objects emit `{ loop: { prompt: '…' } }` so `mergePatch` deep-merges (do NOT replace the whole `loop` object).
+   - `approval`: `<textarea>` for `approval.message`; line-list `<textarea>` for `approval.approvers`. Same nested-object patch shape.
+   - `cancel`: `<textarea>` for `cancel.reason`. Nested-object patch shape.
+
+3. Update `packages/studio-core/src/nodes/<variant>/index.ts` — replace `TodoInspector` with the real one.
+
+4. Run `bun --filter='@archon-studio/core' test <variant>/Inspector` and confirm green.
+
+After all 6 variants are done, run the consolidated test:
+
+```bash
+bun --filter='@archon-studio/core' test nodes/.+/Inspector
+bun --filter='@archon-studio/core' run typecheck
+```
+Expected: 14 tests pass total (2 per variant × 7 variants); typecheck green; the `TodoInspector` placeholder is no longer referenced anywhere — `grep -rn "TodoInspector" packages/studio-core/src` returns nothing.
+
+- [ ] **Step 6: Re-run NodeInspector tests now that General slots are filled**
+
+Run: `bun --filter='@archon-studio/core' test NodeInspector`
+Expected: still green. The shell tests asserted only tab visibility, not General-body content; filling the slot must not regress them.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): GeneralTab frame + 7 per-variant General Inspectors"
+```
+
+---
+
+### Task 57: Shared `ExecutionTab` + `ProviderTab`
+
+**Files:**
+- Create: `packages/studio-core/src/components/inspector/tabs/ExecutionTab.tsx`
+- Create: `packages/studio-core/src/components/inspector/tabs/ProviderTab.tsx`
+- Modify: `packages/studio-core/src/components/inspector/NodeInspector.tsx` — replace `StubExecution` / `StubProvider` with the real components.
+- Test: `packages/studio-core/tests/components/inspector/tabs/ExecutionTab.spec.tsx`
+- Test: `packages/studio-core/tests/components/inspector/tabs/ProviderTab.spec.tsx`
+
+**Field inventory (from spec §6 base fields + Archon's per-variant Zod schemas):**
+
+- ExecutionTab: `timeout` (number, seconds), `retry` object (`max`, `delay`, `backoff` — only when capability `forbidsRetry` is false; if true, render a disabled banner explaining "loop variants forbid retry"), `sandbox` (string select: `none`/`docker`/`firecracker`/whatever the schema enumerates), `on_timeout` (string), `on_failure` (string).
+- ProviderTab: `provider` (string select from Archon's known providers), `model` (string), `model_settings` (JSON via `JsonField`).
+
+These tabs receive `InspectorProps<TData>` like the General body. They MUST emit deep-merge-compatible patches: nested objects (`retry`, `model_settings`) are emitted as `{ retry: { max: 5 } }` so `mergePatch` preserves sibling keys.
+
+- [ ] **Step 1: Write the failing `ExecutionTab` test**
+
+Create `packages/studio-core/tests/components/inspector/tabs/ExecutionTab.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { ExecutionTab } from '../../../../src/components/inspector/tabs/ExecutionTab';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+
+describe('ExecutionTab', () => {
+  it('renders timeout, sandbox, retry max', () => {
+    render(<ExecutionTab id="n" data={{ _unknown: {} } as never} onChange={() => {}} siblingIds={[]} forbidsRetry={false} />);
+    expect(screen.getByLabelText(/timeout/i)).toBeDefined();
+    expect(screen.getByLabelText(/sandbox/i)).toBeDefined();
+    expect(screen.getByLabelText(/retry max/i)).toBeDefined();
+  });
+
+  it('emits nested retry patch on edit', () => {
+    let captured: any;
+    render(<ExecutionTab id="n" data={{ retry: { max: 1 }, _unknown: {} } as never} onChange={(p) => { captured = p; }} siblingIds={[]} forbidsRetry={false} />);
+    fireEvent.change(screen.getByLabelText(/retry max/i), { target: { value: '5' } });
+    expect(captured).toEqual({ retry: { max: 5 } });
+  });
+
+  it('shows the forbidden banner and disables retry when forbidsRetry=true', () => {
+    render(<ExecutionTab id="n" data={{ _unknown: {} } as never} onChange={() => {}} siblingIds={[]} forbidsRetry />);
+    expect(screen.getByText(/loop variants forbid retry/i)).toBeDefined();
+    expect((screen.queryByLabelText(/retry max/i) as HTMLInputElement | null)?.disabled).toBe(true);
+  });
+
+  it('emits null to delete timeout when cleared', () => {
+    let captured: any;
+    render(<ExecutionTab id="n" data={{ timeout: 30, _unknown: {} } as never} onChange={(p) => { captured = p; }} siblingIds={[]} forbidsRetry={false} />);
+    fireEvent.change(screen.getByLabelText(/timeout/i), { target: { value: '' } });
+    expect(captured).toEqual({ timeout: null });
+  });
+});
+```
+
+- [ ] **Step 2: Run, expect failure, then implement `ExecutionTab`**
+
+Run: `bun --filter='@archon-studio/core' test ExecutionTab` → module-not-found.
+
+Create `packages/studio-core/src/components/inspector/tabs/ExecutionTab.tsx`:
+
+```tsx
+import type { InspectorProps } from '../../../nodes/shared/types';
+import { Field } from '../shared';
+
+interface Props extends InspectorProps<any> {
+  forbidsRetry: boolean;
+}
+
+const SANDBOX_OPTIONS = ['none', 'docker', 'firecracker'] as const;
+
+export function ExecutionTab({ id, data, onChange, forbidsRetry }: Props) {
+  const retry = (data.retry ?? {}) as { max?: number; delay?: number; backoff?: string };
+  return (
+    <>
+      <Field label="Timeout (seconds)" htmlFor={`exec-timeout-${id}`} hint="Empty = inherit workflow default.">
+        <input
+          id={`exec-timeout-${id}`}
+          aria-label="Timeout"
+          type="number"
+          min={0}
+          value={data.timeout ?? ''}
+          onChange={(e) => onChange({ timeout: e.target.value === '' ? null : Number(e.target.value) })}
+          style={inputStyle}
+        />
+      </Field>
+      <Field label="Sandbox" htmlFor={`exec-sandbox-${id}`}>
+        <select
+          id={`exec-sandbox-${id}`}
+          aria-label="Sandbox"
+          value={(data.sandbox as string) ?? 'none'}
+          onChange={(e) => onChange({ sandbox: e.target.value === 'none' ? null : e.target.value })}
+          style={selectStyle}
+        >
+          {SANDBOX_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label="On timeout" htmlFor={`exec-ontimeout-${id}`} hint="continue (default), fail, retry.">
+        <input
+          id={`exec-ontimeout-${id}`}
+          aria-label="On timeout"
+          value={(data.on_timeout as string) ?? ''}
+          onChange={(e) => onChange({ on_timeout: e.target.value || null })}
+          style={inputStyle}
+        />
+      </Field>
+      <Field label="On failure" htmlFor={`exec-onfailure-${id}`} hint="continue, fail (default), retry.">
+        <input
+          id={`exec-onfailure-${id}`}
+          aria-label="On failure"
+          value={(data.on_failure as string) ?? ''}
+          onChange={(e) => onChange({ on_failure: e.target.value || null })}
+          style={inputStyle}
+        />
+      </Field>
+      {forbidsRetry ? (
+        <div role="note" style={bannerStyle}>Loop variants forbid retry — use loop.iteration_limit instead.</div>
+      ) : null}
+      <Field label="Retry max" htmlFor={`retry-max-${id}`} hint="Number of retry attempts.">
+        <input
+          id={`retry-max-${id}`}
+          aria-label="Retry max"
+          type="number"
+          min={0}
+          disabled={forbidsRetry}
+          value={retry.max ?? ''}
+          onChange={(e) => onChange({ retry: { max: e.target.value === '' ? null : Number(e.target.value) } })}
+          style={inputStyle}
+        />
+      </Field>
+      <Field label="Retry delay (seconds)" htmlFor={`retry-delay-${id}`}>
+        <input
+          id={`retry-delay-${id}`}
+          aria-label="Retry delay"
+          type="number"
+          min={0}
+          disabled={forbidsRetry}
+          value={retry.delay ?? ''}
+          onChange={(e) => onChange({ retry: { delay: e.target.value === '' ? null : Number(e.target.value) } })}
+          style={inputStyle}
+        />
+      </Field>
+    </>
+  );
+}
+
+const inputStyle: React.CSSProperties = { padding: '6px 8px', fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)', border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)' };
+const selectStyle = inputStyle;
+const bannerStyle: React.CSSProperties = { padding: 8, marginBottom: 12, fontSize: 12, color: 'var(--studio-muted)', background: 'var(--studio-bg-elevated)', border: '1px dashed var(--studio-border)', borderRadius: 'var(--radius-sm)' };
+```
+
+Run: `bun --filter='@archon-studio/core' test ExecutionTab` → 4 tests pass.
+
+- [ ] **Step 3: Implement `ProviderTab` (test + implementation in one batch)**
+
+Test (`packages/studio-core/tests/components/inspector/tabs/ProviderTab.spec.tsx`):
+
+```tsx
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { ProviderTab } from '../../../../src/components/inspector/tabs/ProviderTab';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+
+describe('ProviderTab', () => {
+  it('renders provider, model, model_settings JSON editor', () => {
+    render(<ProviderTab id="n" data={{ _unknown: {} } as never} onChange={() => {}} siblingIds={[]} />);
+    expect(screen.getByLabelText(/^provider$/i)).toBeDefined();
+    expect(screen.getByLabelText(/^model$/i)).toBeDefined();
+    expect(screen.getByLabelText(/model settings/i)).toBeDefined();
+  });
+
+  it('emits nested model_settings patch (deep-merge-compatible)', () => {
+    let captured: any;
+    render(<ProviderTab id="n" data={{ model_settings: { temperature: 0.2 }, _unknown: {} } as never} onChange={(p) => { captured = p; }} siblingIds={[]} />);
+    const ta = screen.getByLabelText(/model settings/i);
+    fireEvent.change(ta, { target: { value: '{"temperature": 0.7}' } });
+    fireEvent.blur(ta);
+    expect(captured).toEqual({ model_settings: { temperature: 0.7 } });
+  });
+});
+```
+
+Implementation (`packages/studio-core/src/components/inspector/tabs/ProviderTab.tsx`):
+
+```tsx
+import type { InspectorProps } from '../../../nodes/shared/types';
+import { Field, JsonField } from '../shared';
+
+const PROVIDERS = ['anthropic', 'openai', 'google', 'bedrock', 'vertex'] as const;
+
+export function ProviderTab({ id, data, onChange }: InspectorProps<any>) {
+  return (
+    <>
+      <Field label="Provider" htmlFor={`prov-${id}`}>
+        <select
+          id={`prov-${id}`}
+          aria-label="Provider"
+          value={(data.provider as string) ?? ''}
+          onChange={(e) => onChange({ provider: e.target.value || null })}
+          style={selectStyle}
+        >
+          <option value="">(inherit)</option>
+          {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </Field>
+      <Field label="Model" htmlFor={`model-${id}`} hint="e.g., claude-opus-4-7, gpt-5.">
+        <input
+          id={`model-${id}`}
+          aria-label="Model"
+          value={(data.model as string) ?? ''}
+          onChange={(e) => onChange({ model: e.target.value || null })}
+          style={inputStyle}
+        />
+      </Field>
+      <JsonField
+        label="Model settings"
+        value={data.model_settings ?? {}}
+        onChange={(v) => onChange({ model_settings: v as Record<string, unknown> })}
+        hint="Deep-merged onto existing model_settings; arrays replace wholesale."
+      />
+    </>
+  );
+}
+
+const inputStyle: React.CSSProperties = { padding: '6px 8px', fontSize: 13, background: 'var(--studio-bg-elevated)', color: 'var(--studio-fg)', border: '1px solid var(--studio-border)', borderRadius: 'var(--radius-sm)' };
+const selectStyle = inputStyle;
+```
+
+Run: `bun --filter='@archon-studio/core' test ProviderTab` → 2 tests pass.
+
+- [ ] **Step 4: Wire both tabs into `NodeInspector`**
+
+Modify `packages/studio-core/src/components/inspector/NodeInspector.tsx`:
+- Remove the `StubExecution` and `StubProvider` consts.
+- Import the real components: `import { ExecutionTab } from './tabs/ExecutionTab'; import { ProviderTab } from './tabs/ProviderTab';`
+- In the tab switch, replace `case 'execution': return <StubExecution />;` with `case 'execution': return <ExecutionTab {...(panelProps as never)} forbidsRetry={variant.capabilities.forbidsRetry} />;`
+- Replace `case 'provider': return <StubProvider />;` with `case 'provider': return <ProviderTab {...(panelProps as never)} />;`
+
+- [ ] **Step 5: Re-run NodeInspector + tab tests**
+
+```bash
+bun --filter='@archon-studio/core' test inspector
+bun --filter='@archon-studio/core' run typecheck
+```
+Expected: all green. The `tab-stub-execution` / `tab-stub-provider` testids no longer render — but the existing NodeInspector test only asserted on `tab-panel-advanced`, so it still passes.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): ExecutionTab + ProviderTab"
+```
+
+---
+
+### Task 58: Shared `ToolsTab` + `HooksTab`
+
+**Files:**
+- Create: `packages/studio-core/src/components/inspector/tabs/ToolsTab.tsx`
+- Create: `packages/studio-core/src/components/inspector/tabs/HooksTab.tsx`
+- Modify: `packages/studio-core/src/components/inspector/NodeInspector.tsx` — replace `StubTools` / `StubHooks`.
+- Test: `packages/studio-core/tests/components/inspector/tabs/ToolsTab.spec.tsx`
+- Test: `packages/studio-core/tests/components/inspector/tabs/HooksTab.spec.tsx`
+
+**Field inventory:**
+
+- ToolsTab: `allowed_tools` (string list — line-per-row textarea + chip preview), `disallowed_tools` (same), `output_format` (JSON via `JsonField` — Archon's output-format Zod is structural).
+- HooksTab: array of `{ event: 'PreToolUse' | 'PostToolUse' | 'Stop', match: string, command: string, blocking?: boolean }` rows. Add/remove rows; foreign sub-keys on individual hook entries are preserved (each hook is a sub-object — emit a *patch* by index that the store deep-merges only on that index). Easiest path: treat the entire `hooks` array as wholesale replace (mergePatch already does this), but render in a way that preserves any unknown per-hook keys by spreading the original object: `{ ...originalHook, command: nextCommand }`.
+
+- [ ] **Step 1: Write + implement `ToolsTab`**
+
+Test pattern (mirror ExecutionTab tests): renders `allowed_tools` / `disallowed_tools` / `output_format`; line-per-row edit emits `{ allowed_tools: ['Read', 'Edit'] }`; clearing emits `{ allowed_tools: null }`.
+
+Implementation sketch:
+
+```tsx
+import type { InspectorProps } from '../../../nodes/shared/types';
+import { Field, JsonField } from '../shared';
+
+const linesToList = (s: string): string[] => s.split('\n').map((l) => l.trim()).filter(Boolean);
+
+export function ToolsTab({ id, data, onChange }: InspectorProps<any>) {
+  return (
+    <>
+      <Field label="Allowed tools" htmlFor={`at-${id}`} hint="One per line. Empty = no allow-list.">
+        <textarea
+          id={`at-${id}`} aria-label="Allowed tools"
+          value={((data.allowed_tools as string[]) ?? []).join('\n')}
+          onChange={(e) => { const list = linesToList(e.target.value); onChange({ allowed_tools: list.length ? list : null }); }}
+          rows={4} style={textareaStyle}
+        />
+      </Field>
+      <Field label="Disallowed tools" htmlFor={`dt-${id}`} hint="One per line. Wins over allowed_tools.">
+        <textarea
+          id={`dt-${id}`} aria-label="Disallowed tools"
+          value={((data.disallowed_tools as string[]) ?? []).join('\n')}
+          onChange={(e) => { const list = linesToList(e.target.value); onChange({ disallowed_tools: list.length ? list : null }); }}
+          rows={4} style={textareaStyle}
+        />
+      </Field>
+      <JsonField
+        label="Output format"
+        value={data.output_format ?? {}}
+        onChange={(v) => onChange({ output_format: v && Object.keys(v as object).length ? v : null })}
+        hint="JSON-schema-like shape Archon uses for typed step output."
+      />
+    </>
+  );
+}
+```
+
+Run: `bun --filter='@archon-studio/core' test ToolsTab` → green.
+
+- [ ] **Step 2: Write + implement `HooksTab`**
+
+Test pattern: renders 0-row empty state; clicking "Add hook" emits a patch containing one fresh hook entry; editing the command of row 0 emits a patch where row 0's `command` changes but other unknown sub-keys on row 0 survive.
+
+Implementation sketch:
+
+```tsx
+import type { InspectorProps } from '../../../nodes/shared/types';
+import { Field } from '../shared';
+
+type Hook = { event: 'PreToolUse' | 'PostToolUse' | 'Stop'; match?: string; command: string; blocking?: boolean };
+
+export function HooksTab({ data, onChange }: InspectorProps<any>) {
+  const hooks: Hook[] = (data.hooks as Hook[]) ?? [];
+  const update = (i: number, patch: Partial<Hook>) => {
+    const next = hooks.map((h, idx) => idx === i ? { ...h, ...patch } : h);
+    onChange({ hooks: next });
+  };
+  const add = () => onChange({ hooks: [...hooks, { event: 'PostToolUse', command: '' }] });
+  const remove = (i: number) => onChange({ hooks: hooks.length === 1 ? null : hooks.filter((_, idx) => idx !== i) });
+
+  if (hooks.length === 0) {
+    return (
+      <div>
+        <p style={{ fontSize: 12, color: 'var(--studio-muted)' }}>No hooks. Add one to run a shell command on a step event.</p>
+        <button type="button" onClick={add} style={addBtnStyle}>+ Add hook</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {hooks.map((h, i) => (
+        <fieldset key={i} style={hookCardStyle}>
+          <legend style={{ fontSize: 11, color: 'var(--studio-muted)' }}>Hook {i + 1}</legend>
+          <Field label="Event" htmlFor={`hk-event-${i}`}>
+            <select id={`hk-event-${i}`} aria-label={`Hook ${i + 1} event`} value={h.event} onChange={(e) => update(i, { event: e.target.value as Hook['event'] })} style={selectStyle}>
+              {(['PreToolUse', 'PostToolUse', 'Stop'] as const).map((ev) => <option key={ev} value={ev}>{ev}</option>)}
+            </select>
+          </Field>
+          <Field label="Match" htmlFor={`hk-match-${i}`} hint="Tool-name regex (PreToolUse/PostToolUse only).">
+            <input id={`hk-match-${i}`} aria-label={`Hook ${i + 1} match`} value={h.match ?? ''} onChange={(e) => update(i, { match: e.target.value || undefined })} style={inputStyle} />
+          </Field>
+          <Field label="Command" htmlFor={`hk-cmd-${i}`}>
+            <textarea id={`hk-cmd-${i}`} aria-label={`Hook ${i + 1} command`} value={h.command} onChange={(e) => update(i, { command: e.target.value })} rows={2} style={textareaStyle} />
+          </Field>
+          <label style={{ display: 'flex', gap: 6, fontSize: 12 }}>
+            <input type="checkbox" checked={Boolean(h.blocking)} onChange={(e) => update(i, { blocking: e.target.checked || undefined })} />
+            Blocking
+          </label>
+          <button type="button" onClick={() => remove(i)} style={removeBtnStyle}>Remove hook</button>
+        </fieldset>
+      ))}
+      <button type="button" onClick={add} style={addBtnStyle}>+ Add hook</button>
+    </div>
+  );
+}
+```
+
+(Style consts: same as prior tabs; add `hookCardStyle`, `addBtnStyle`, `removeBtnStyle`.)
+
+Run: `bun --filter='@archon-studio/core' test HooksTab` → green.
+
+- [ ] **Step 3: Wire both tabs in `NodeInspector`**
+
+Replace `StubTools` / `StubHooks` with the real imports + tab switch entries. Same pattern as Task 57 Step 4.
+
+- [ ] **Step 4: Run all inspector tests + typecheck**
+
+```bash
+bun --filter='@archon-studio/core' test inspector
+bun --filter='@archon-studio/core' run typecheck
+```
+Expected: all green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): ToolsTab + HooksTab"
+```
+
+---
+
+### Task 59: Shared `SkillsMcpTab` + `AdvancedTab` (Raw `_unknown` editor) + variant-migration component test
+
+**Files:**
+- Create: `packages/studio-core/src/components/inspector/tabs/SkillsMcpTab.tsx`
+- Create: `packages/studio-core/src/components/inspector/tabs/AdvancedTab.tsx`
+- Modify: `packages/studio-core/src/components/inspector/NodeInspector.tsx` — replace `StubSkillsMcp` / `StubAdvanced`.
+- Test: `packages/studio-core/tests/components/inspector/tabs/SkillsMcpTab.spec.tsx`
+- Test: `packages/studio-core/tests/components/inspector/tabs/AdvancedTab.spec.tsx`
+- Test (the §12.2 deliverable): `packages/studio-core/tests/components/inspector/variant-migration.spec.tsx` — drive `convertVariant` through the store; assert (a) the inspector re-derives its tab list; (b) base fields survive; (c) variant-only fields land in `_unknown._converted_from`; (d) the Advanced tab's Raw editor displays the migrated `_unknown` JSON.
+
+**SkillsMcpTab** is the simplest: two textareas — `skills` (string list, line-per-row) and `mcp` (string list of named server keys; same shape). Both replace wholesale.
+
+**AdvancedTab** has two sections:
+1. **Raw fields** — A `JsonField` over `data._unknown`. Editing emits `{ _unknown: <new object> }`. The hint text must be explicit: "These are forward-compat fields the studio doesn't recognize. Edits replace this object wholesale."
+2. **Read-only summary** — capabilities pill row showing `honorsAiFields` / `forbidsRetry` / `requiresInteractive`, sourced from the variant registry. Helpful for debugging.
+
+(Note: variant-convert UI is intentionally omitted per scope decision recorded in chunk preamble. The `convertVariant` action is reachable from the store and is exercised by the migration test below.)
+
+- [ ] **Step 1: Write + implement `SkillsMcpTab`**
+
+Implementation pattern matches `ToolsTab` line-per-row textareas; tests mirror its 2 tests (renders both fields; line edit emits replace patch; clear emits null).
+
+- [ ] **Step 2: Write + implement `AdvancedTab`**
+
+```tsx
+import type { InspectorProps } from '../../../nodes/shared/types';
+import { variantRegistry } from '../../../nodes/registry';
+import { useBuilderStore } from '../../../store/builder-store';
+import { JsonField } from '../shared';
+
+export function AdvancedTab({ id, data, onChange }: InspectorProps<any>) {
+  const variant = useBuilderStore((s) => {
+    const node = s.nodes.find((n) => n.id === id);
+    return node ? variantRegistry[node.variant] : undefined;
+  });
+
+  return (
+    <>
+      <JsonField
+        label="Raw fields (_unknown)"
+        value={data._unknown ?? {}}
+        onChange={(v) => onChange({ _unknown: v as Record<string, unknown> })}
+        hint="Forward-compat bag for fields the studio doesn't recognize. Edits replace this object wholesale; foreign sub-keys you don't include here will be lost."
+      />
+      {variant ? (
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--studio-border)' }}>
+          <h4 style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--studio-muted)', margin: '0 0 8px 0' }}>Variant capabilities</h4>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--studio-fg)' }}>
+            <li>honorsAiFields: <code>{String(variant.capabilities.honorsAiFields)}</code></li>
+            <li>forbidsRetry: <code>{String(variant.capabilities.forbidsRetry)}</code></li>
+            <li>requiresInteractive: <code>{String(Boolean(variant.capabilities.requiresInteractive))}</code></li>
+          </ul>
+        </div>
+      ) : null}
+    </>
+  );
+}
+```
+
+Tests: renders the JSON editor pre-populated from `data._unknown`; renders capabilities; emits `{ _unknown: {…} }` on commit.
+
+- [ ] **Step 3: Wire both tabs in `NodeInspector`**
+
+Replace `StubSkillsMcp` / `StubAdvanced` with the real components.
+
+- [ ] **Step 4: Write the variant-migration component test (the §12.2 deliverable)**
+
+Create `packages/studio-core/tests/components/inspector/variant-migration.spec.tsx`:
+
+```tsx
+import { describe, it, expect, beforeAll, beforeEach } from 'bun:test';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { NodeInspector } from '../../../src/components/inspector/NodeInspector';
+import { useBuilderStore } from '../../../src/store/builder-store';
+
+beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); });
+beforeEach(() => useBuilderStore.getState().clearWorkflow());
+
+describe('variant migration via convertVariant', () => {
+  beforeEach(() => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        {
+          id: 'n1',
+          variant: 'command',
+          data: {
+            command: 'classify',
+            description: 'orig',
+            timeout: 30,
+            provider: 'anthropic',
+            allowed_tools: ['Read'],
+            _unknown: {},
+          } as never,
+        },
+      ],
+    });
+    useBuilderStore.getState().setSelectedNodeId('n1');
+  });
+
+  it('inspector re-derives tab list when variant changes', () => {
+    const { rerender } = render(<NodeInspector />);
+    expect(screen.getByRole('tab', { name: /provider/i })).toBeDefined();
+
+    act(() => { useBuilderStore.getState().convertVariant('n1', 'bash'); });
+    rerender(<NodeInspector />);
+
+    expect(screen.queryByRole('tab', { name: /provider/i })).toBeNull();
+    expect(screen.getByRole('tab', { name: /general/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /execution/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
+  });
+
+  it('base fields (timeout) survive migration', () => {
+    act(() => { useBuilderStore.getState().convertVariant('n1', 'bash'); });
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    expect((node.data as any).timeout).toBe(30);
+    expect((node.data as any).description).toBe('orig');
+  });
+
+  it('Advanced Raw editor shows migrated _converted_from in _unknown', () => {
+    act(() => { useBuilderStore.getState().convertVariant('n1', 'bash'); });
+    render(<NodeInspector />);
+    fireEvent.click(screen.getByRole('tab', { name: /advanced/i }));
+    const ta = screen.getByLabelText(/raw fields/i) as HTMLTextAreaElement;
+    expect(ta.value).toContain('_converted_from');
+    expect(ta.value).toContain('"variant": "command"');
+    expect(ta.value).toContain('"provider": "anthropic"');
+  });
+});
+```
+
+Run: `bun --filter='@archon-studio/core' test variant-migration` → 3 tests pass.
+
+- [ ] **Step 5: Run all inspector tests + typecheck + build**
+
+```bash
+bun --filter='@archon-studio/core' run typecheck
+bun --filter='@archon-studio/core' test
+bun --filter='@archon-studio/core' run build
+```
+Expected: all green. `grep -rn "Stub" packages/studio-core/src/components/inspector` returns nothing — every stub has been replaced.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat(inspector): SkillsMcpTab + AdvancedTab + variant-migration test"
+```
+
+---
+
+### Task 60: Wire `NodeInspector` into `WorkflowBuilder` shell + standalone smoke
+
+**Files:**
+- Modify: `packages/studio-core/src/components/WorkflowBuilder.tsx` — replace `{/* Phase 4 fills in NodeInspector */}` with `<NodeInspector />`.
+- Modify: `packages/studio-core/src/index.ts` — export `NodeInspector` from the public surface (in case embedders want to host it standalone).
+- Test: `packages/studio-core/tests/components/WorkflowBuilder.spec.tsx` — extend the existing Phase-2 shell test to assert the inspector mount renders, including the "Select a node to edit" empty state.
+
+This is the wire-in. Once `WorkflowBuilder` mounts `NodeInspector`, clicking a node on the canvas (Canvas.onNodeClick → store.setSelectedNodeId, Phase 2) drives inspector content end-to-end. `apps/standalone` consumes `WorkflowBuilder` directly so no app-side change is needed.
+
+- [ ] **Step 1: Wire `<NodeInspector />` into `WorkflowBuilder`**
+
+Modify `packages/studio-core/src/components/WorkflowBuilder.tsx`. Find:
+
+```tsx
+{/* Phase 4 fills in NodeInspector */}
+```
+
+Replace with:
+
+```tsx
+<NodeInspector />
+```
+
+Add import: `import { NodeInspector } from './inspector/NodeInspector';`
+
+- [ ] **Step 2: Public export**
+
+Modify `packages/studio-core/src/index.ts`:
+
+```ts
+export { NodeInspector } from './components/inspector/NodeInspector';
+```
+
+- [ ] **Step 3: Update `WorkflowBuilder` shell test**
+
+Extend `packages/studio-core/tests/components/WorkflowBuilder.spec.tsx` to assert the inspector mounts:
+
+```tsx
+it('renders the NodeInspector empty state by default', () => {
+  // ... mount WorkflowBuilder with the standard test harness ...
+  expect(screen.getByText(/select a node to edit/i)).toBeDefined();
+});
+
+it('inspector follows canvas selection', () => {
+  // ... mount with a workflow that has one node 'n1' ...
+  // ... programmatically setSelectedNodeId('n1') via the store ...
+  expect(screen.getByLabelText(/node id/i)).toBeDefined(); // RenameField only renders when a node is selected
+});
+```
+
+- [ ] **Step 4: Run, expect green**
+
+```bash
+bun --filter='@archon-studio/core' test WorkflowBuilder
+bun --filter='@archon-studio/core' test
+bun --filter='@archon-studio/core' run typecheck
+bun --filter='@archon-studio/core' run build
+bun --filter='@archon-studio/standalone' run build
+```
+Expected: all green; standalone bundles cleanly.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat(builder): wire NodeInspector into WorkflowBuilder shell"
+```
+
+---
+
+### Task 61: Manual visual smoke + Phase 4 verification + push + tag
+
+**Files:**
+- None (verification only).
+
+The parity-with-spec gate. Open the standalone, exercise every Phase 4 surface, push and tag.
+
+- [ ] **Step 1: Run all tests + lint + format + build**
+
+```bash
+bun run lint
+bun run format:check
+bun --filter='*' run test
+bun --filter='*' run build
+```
+Expected: all green. If anything fails, fix and re-run before proceeding.
+
+- [ ] **Step 2: Run schema-drift + round-trip safety**
+
+```bash
+bun run check-schema-drift
+bun --filter='@archon-studio/core' test round-trip
+```
+Expected: schema-drift green; round-trip green for all 21 bundled defaults + smoke. (Phase 4 should NOT have touched the schema mirror or the importer/exporter; if these fail, an unintended regression slipped in via Inspector edits clobbering `_unknown` — investigate `mergePatch` semantics first.)
+
+- [ ] **Step 3: Manual visual smoke — standalone shell**
+
+Run: `bun --filter='@archon-studio/standalone' run dev`
+Open `http://localhost:5173`. Walk through, in this exact sequence:
+
+1. Open one of the bundled workflows (any one with multiple variants, e.g., `archon-feature-development` — it has command + prompt + bash). The right rail shows "Select a node to edit."
+2. Click a `command` node — inspector populates with all 6 tabs (General / Execution / Provider / Tools / Hooks / Skills+MCP / Advanced); General shows command + args; the type pill in the header reads `command`; the Node ID input is editable.
+3. Click a `bash` node — inspector tabs collapse to General + Execution + Advanced; type pill reads `bash`; AI tabs vanish.
+4. On the command node: edit description; switch to Provider; change model; switch back to General — description edits persist; canvas re-renders if the renderer surfaces description.
+5. On the command node: open Advanced; verify Raw fields panel shows `{}` (or whatever `_unknown` was at import). Edit it to `{"foo": "bar"}`, blur — no error. Reopen the workflow from disk via the workflow list — `foo: bar` should round-trip back into the inspector's Raw fields. **This is the killer manual check** — if it fails, the importer is dropping `_unknown` (Phase 1 regression) or the exporter is dropping it (Phase 1 regression). Either way, Phase 4 cannot ship.
+6. Edit a node's ID via the General header's Node ID input. Tab out. Confirm: (a) the canvas node label updates; (b) any downstream node that depended on the renamed node now shows the new id in its General → Depends on chips; (c) any `when:` string referencing `$<oldId>.output…` was rewritten in the inspector and on the canvas (open the dependent node's General → When raw to confirm).
+7. Edit a node's `depends_on` chips — remove a chip, add one back via the autocomplete input. Confirm the canvas edge appears/disappears immediately.
+8. (Loop variant only — open `archon-test-loop-dag` if it exists, else create a `loop` node from the library.) Open Execution tab. Confirm the "Loop variants forbid retry" banner is shown and the Retry max input is disabled.
+9. (Variant migration — store-only, no UI affordance, but verifiable from the JS console.) Open devtools → console → run:
+   ```js
+   __studio?.store?.getState?.().convertVariant('<some-command-node-id>', 'bash')
+   ```
+   (Where `__studio` is the standalone's window-attached debug handle, if exposed; if not, this step is skipped — the unit + component tests cover the path.) Confirm: inspector tab list collapses to General + Execution + Advanced; Raw fields panel now shows `_converted_from` containing the prior command + provider + allowed_tools.
+
+If anything fails, file a bug against the appropriate task and fix before tagging.
+
+- [ ] **Step 4: Capture a screenshot**
+
+Save a screenshot of the standalone showing the inspector populated (any AI-honoring variant selected, several tabs visible) to `docs/superpowers/screenshots/phase-4-smoke.png` (mkdir if needed). Reference it in the deliverables checklist below.
+
+- [ ] **Step 5: Update `phases.md`**
+
+Mark Phase 4 as **Planned ✅ Reviewed (after this chunk passes review) ✅ Executed (after Step 6) ✅** in `phases.md`.
+
+- [ ] **Step 6: Push + tag**
+
+```bash
+git push origin main
+git tag -a phase-4 -m "Phase 4: NodeInspector + variant inspectors + cascading rename"
+git push origin phase-4
+```
+
+- [ ] **Step 7: Update Phase 4 deliverables checklist below**
+
+---
+
+## Phase 4 deliverables checklist
+
+- [ ] Phase-3 reality check passes — Inspector slot reserved, `renameNode` cascades through depends_on + when + body refs, WorkflowBuilder placeholder present, every variant module registered, `VariantId` union shape confirmed (Task 52.5)
+- [ ] `mergePatch` deep-merge helper with array-replace + null-deletes semantics; `updateNodeData` rewritten to use it; `convertVariant` store action with deep-merge migration into `_unknown._converted_from`; `VariantDefinition.Inspector` slot filled; `InspectorProps<TData>` + `InspectorTabId` + `tabsForVariant()` exported (Task 53)
+- [ ] Shared inspector primitives — `Field`, `RenameField` (cascading via existing `store.renameNode`), `DependsOnEditor` (chip-list with sibling-id autocomplete), `JsonField` with parse-error UI (Task 54)
+- [ ] `NodeInspector` shell — capability-driven tab list via `tabsForVariant`, header with `RenameField` + variant pill, empty state, selection-driven content swap; `useInspectorPatch` adapter (Task 55)
+- [ ] `GeneralTab` frame (description + depends_on + raw `when` + trigger_rule) + 7 per-variant General sub-Inspectors (command, prompt, bash, script, loop, approval, cancel); every `TodoInspector` placeholder removed (Task 56)
+- [ ] `ExecutionTab` (timeout, sandbox, on_timeout, on_failure, retry — gated by `forbidsRetry`) + `ProviderTab` (provider, model, model_settings JSON) (Task 57)
+- [ ] `ToolsTab` (allowed_tools, disallowed_tools, output_format JSON) + `HooksTab` (event/match/command/blocking row editor with foreign-key preservation) (Task 58)
+- [ ] `SkillsMcpTab` (skills + mcp string lists) + `AdvancedTab` (Raw `_unknown` JSON editor + capabilities readout) + variant-migration component test (the §12.2 deliverable) (Task 59)
+- [ ] `<NodeInspector />` mounted in `WorkflowBuilder` shell; `NodeInspector` exported on the public surface; shell test extended (Task 60)
