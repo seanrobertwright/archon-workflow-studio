@@ -1,0 +1,21 @@
+# Force LF line endings in the working tree on every platform.
+# Prettier (no `endOfLine` override in prettier.config.js) defaults to enforcing
+# LF, but Windows checkouts under `core.autocrlf=true` were producing CRLF and
+# tripping `format:check` on every fresh worktree. With this file, Git stores
+# and checks out LF for all text content regardless of platform / autocrlf.
+* text=auto eol=lf
+
+# Lockfiles and snapshots — keep verbatim.
+bun.lock binary
+*.snap binary
+
+# Binary asset types — never line-end-normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
