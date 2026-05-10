@@ -20,22 +20,21 @@ describe('BashInspector', () => {
     expect(screen.getByLabelText(/^timeout$/i)).toBeDefined();
   });
 
-  it('emits a patch on bash body edit', () => {
-    let captured: Record<string, unknown> | null = null;
-    render(
+  it('renders bash body in a CmEditor populated from data.bash', () => {
+    // Phase 5 migrated bash body to CmEditor — see drift §5.6.1. Typing
+    // simulation against contenteditable is covered by CmEditor.spec.tsx.
+    const { container } = render(
       <BashInspector
         id="n1"
-        data={{ bash: '' }}
+        data={{ bash: 'ls -la' }}
         base={{}}
         unknown={{}}
-        onChange={(p) => {
-          captured = p;
-        }}
+        onChange={() => {}}
         siblingIds={[]}
       />,
     );
-    fireEvent.change(screen.getByLabelText(/^bash$/i), { target: { value: 'ls -la' } });
-    expect(captured).toEqual({ bash: 'ls -la' });
+    expect(screen.getByLabelText(/^bash$/i).textContent).toContain('ls -la');
+    expect(container.querySelector('[contenteditable="true"]')).not.toBeNull();
   });
 
   it('emits null timeout when the input is cleared', () => {

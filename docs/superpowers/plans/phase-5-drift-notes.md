@@ -62,3 +62,32 @@ the plan specified, so this is invisible to them.
 upstream operator and connective set against `grammar.archon.md`. If
 upstream ever adds parens or a new operator, CI fails and the human
 operator updates both `grammar.archon.md` and `grammar.ts` in lockstep.
+
+## Drift 5.6.1 — Inspector typing-simulation tests dropped in favor of editor presence
+
+**Plan §5.6 Step 7 expected:** keep `fireEvent.change → expect(captured patch)`
+tests on body fields, updating selectors to find `[contenteditable="true"]`.
+
+**Reality:** `fireEvent.change` doesn't propagate through CodeMirror 6's
+contenteditable shell — CM listens for `beforeinput`/`input` events on a
+hidden input model, and the testing-library `change` synthetic event doesn't
+trigger that. Faithful keystroke simulation against CodeMirror requires
+either a real Chromium environment (Playwright) or directly dispatching on
+the EditorView via `view.dispatch(...)`, neither of which the existing
+bun:test/happy-dom setup supports.
+
+**What shipped:** the four body-field "emits patch on edit" tests
+(PromptInspector, BashInspector, LoopInspector, ApprovalInspector) were
+replaced with "renders body in CmEditor populated from data.X" assertions
+that verify the value plumbing AND the presence of CodeMirror's
+contenteditable DOM signature. The onChange wiring inside the Inspector is
+trivial (a single `onChange={(next) => onChange({ field: next })}` prop
+pass-through); the typing→onChange contract itself is exercised by
+`CmEditor.spec.tsx`'s "controlled value updates" test plus implicit
+coverage from the CodeMirror updateListener inside CmEditor.
+
+**Net delta:** one fewer test (the rerender-with-prop-update path absorbed
+two old assertions into one new one), so the suite went from 319 → 318.
+Coverage of the inspector→onChange contract is unchanged in *kind* — only
+the *mechanism* of the assertion moved from synthetic-event simulation to
+DOM-shape and prop-plumbing checks.

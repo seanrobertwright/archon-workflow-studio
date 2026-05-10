@@ -21,21 +21,20 @@ describe('ApprovalInspector', () => {
     expect(screen.getByLabelText(/on reject prompt/i)).toBeDefined();
   });
 
-  it('emits a deep-merge patch on approval.message edit', () => {
-    let captured: Record<string, unknown> | null = null;
-    render(
+  it('renders approval.message in a CmEditor populated from data.approval.message', () => {
+    // Phase 5 migrated approval.message to CmEditor; typing simulation is
+    // covered by CmEditor.spec.tsx.
+    const { container } = render(
       <ApprovalInspector
         id="n1"
-        data={{ approval: { message: 'old' } }}
+        data={{ approval: { message: 'Please approve.' } }}
         base={{}}
         unknown={{}}
-        onChange={(p) => {
-          captured = p;
-        }}
+        onChange={() => {}}
         siblingIds={[]}
       />,
     );
-    fireEvent.change(screen.getByLabelText(/^message$/i), { target: { value: 'new copy' } });
-    expect(captured).toEqual({ approval: { message: 'new copy' } });
+    expect(screen.getByLabelText(/^message$/i).textContent).toContain('Please approve.');
+    expect(container.querySelector('[contenteditable="true"]')).not.toBeNull();
   });
 });

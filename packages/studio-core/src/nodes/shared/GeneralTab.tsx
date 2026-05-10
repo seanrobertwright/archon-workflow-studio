@@ -1,6 +1,9 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Field, DependsOnEditor } from '../../components/inspector/shared';
+import { DependsOnEditor, Field } from '../../components/inspector/shared';
+import { WhenSection } from '../../components/when/WhenSection';
+import { useWhenContext } from '../../components/when/useWhenContext';
 import { TRIGGER_RULES } from '../../schemas/dag-node';
+import { useBuilderStore } from '../../store/builder-store';
 
 interface Props {
   base: Record<string, unknown>;
@@ -25,6 +28,11 @@ export function GeneralTab({ base, siblingIds, onChange, children }: Props) {
   const when = (base.when as string | undefined) ?? '';
   const triggerRule = (base.trigger_rule as string | undefined) ?? 'all_success';
 
+  // Upstream-aware autocomplete context is sourced from the store via the
+  // hook, so WhenSection reflects the current workflow without prop drilling.
+  const selectedId = useBuilderStore((s) => s.selectedNodeId) ?? '';
+  const { upstreamIds, outputFormatLookup } = useWhenContext(selectedId);
+
   return (
     <>
       {children}
@@ -33,19 +41,12 @@ export function GeneralTab({ base, siblingIds, onChange, children }: Props) {
         siblingIds={siblingIds}
         onChange={(next) => onChange({ depends_on: next.length === 0 ? null : next })}
       />
-      <Field
-        label="When (raw)"
-        htmlFor="gt-when"
-        hint="Phase 5 replaces this with a visual builder. Grammar: $id.output.field == 'value' joined by && / ||."
-      >
-        <textarea
-          id="gt-when"
-          value={when}
-          onChange={(e) => onChange({ when: e.target.value || null })}
-          rows={2}
-          style={{ ...textareaStyle, fontFamily: 'var(--studio-mono)', fontSize: 12 }}
-        />
-      </Field>
+      <WhenSection
+        value={when || undefined}
+        upstreamIds={upstreamIds}
+        outputFormatLookup={outputFormatLookup}
+        onChange={(next) => onChange({ when: next })}
+      />
       <Field
         label="Trigger rule"
         htmlFor="gt-trigger"
@@ -70,15 +71,6 @@ export function GeneralTab({ base, siblingIds, onChange, children }: Props) {
   );
 }
 
-const textareaStyle: CSSProperties = {
-  padding: 8,
-  fontSize: 13,
-  background: 'var(--studio-bg-elevated)',
-  color: 'var(--studio-fg)',
-  border: '1px solid var(--studio-border)',
-  borderRadius: 'var(--radius-sm)',
-  resize: 'vertical',
-};
 const selectStyle: CSSProperties = {
   padding: '6px 8px',
   fontSize: 13,

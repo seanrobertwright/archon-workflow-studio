@@ -1,8 +1,8 @@
 import type { FC } from 'react';
-import { Field } from '../../components/inspector/shared';
-import type { InspectorProps } from '../shared/types';
+import { CmEditor, Field } from '../../components/inspector/shared';
+import { useWhenContext } from '../../components/when/useWhenContext';
 import { GeneralTab } from '../shared/GeneralTab';
-import { textareaStyle } from '../shared/inspectorStyles';
+import type { InspectorProps } from '../shared/types';
 import type { PromptNodeData } from './data';
 
 export const PromptInspector: FC<InspectorProps<PromptNodeData>> = ({
@@ -11,21 +11,19 @@ export const PromptInspector: FC<InspectorProps<PromptNodeData>> = ({
   base,
   onChange,
   siblingIds,
-}) => (
-  <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-    <Field
-      label="Prompt"
-      htmlFor={`prompt-${id}`}
-      hint="Inline prompt body. Reference upstream output via $nodeId.output (autocomplete in Phase 5)."
-    >
-      <textarea
-        id={`prompt-${id}`}
-        aria-label="Prompt"
-        value={data.prompt ?? ''}
-        onChange={(e) => onChange({ prompt: e.target.value })}
-        rows={8}
-        style={textareaStyle}
-      />
-    </Field>
-  </GeneralTab>
-);
+}) => {
+  const { extensions } = useWhenContext(id);
+  return (
+    <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
+      <Field label="Prompt" hint="Inline prompt body. Type $ for upstream node references.">
+        <CmEditor
+          ariaLabel="Prompt"
+          value={data.prompt ?? ''}
+          onChange={(next) => onChange({ prompt: next })}
+          extensions={extensions}
+          minHeight={140}
+        />
+      </Field>
+    </GeneralTab>
+  );
+};
