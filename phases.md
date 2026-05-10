@@ -4,7 +4,7 @@
 | Phase 1 — Core data model, registry, importer/exporter, full round-trip                  | ✅      | ✅       | ✅       |
 | Phase 2 — Canvas, DagNode, position persistence, WorkflowBuilder shell, standalone smoke | ✅      | ✅       | ✅       |
 | Phase 3 — NodeLibrary + per-variant Renderers + snippets                                 | ✅      | ✅       | ✅       |
-| Phase 4 — NodeInspector + variant inspectors + cascading rename                          | ✅      | ✅       | 🟡       |
+| Phase 4 — NodeInspector + variant inspectors + cascading rename                          | ✅      | ✅       | ✅       |
 | Phase 5 — Visual `when:` builder + autocomplete                                          | ❌      | ❌       | ❌       |
 | Phase 6 — Validation pipeline + ValidationPanel                                          | ❌      | ❌       | ❌       |
 | Phase 7 — YAML preview pane                                                              | ❌      | ❌       | ❌       |
@@ -12,29 +12,36 @@
 | Phase 9 — Connected mode complete (connect, list, save)                                  | ❌      | ❌       | ❌       |
 | Phase 10 — Tests + drift CI + docs + release polish                                      | ❌      | ❌       | ❌       |
 
-## Phase 4 — partial completion notes (branch `phase-4`)
+## Phase 4 — completion notes
 
-Tasks 52.5, 53, 54, 55, 56 ✅ landed (8 commits on top of `main`). Tasks 57,
-58, 59, 60 deferred — see `docs/superpowers/plans/phase-4-drift-notes.md` §8
-for the per-task drift findings and resolved design decisions (HooksTab uses
-JsonField; capability-aware parking lands in Task 53, not Task 59; etc.).
+All 9 tasks landed on branch `phase-4` (Tasks 52.5, 53, 54, 55, 56, 57,
+58, 59, 60). The drift cheat sheet at
+`docs/superpowers/plans/phase-4-drift-notes.md` records every plan-vs-code
+divergence and the design decisions made along the way (HooksTab as
+JsonField; capability-aware AI-field parking on convertVariant; ProviderTab
+renders all AI base fields as flat schema-typed controls instead of a
+fictional `model_settings` wrapper).
 
-What works on `phase-4` today:
+Phase 4 deliverables shipped:
 
 - mergePatch + updateNodeData (unified routing across data/base/unknown)
-- convertVariant with capability-aware AI-field parking
+- convertVariant with capability-aware AI-field parking into
+  `data._unknown._converted_from`
 - renameNode body-ref cascade through prompt/bash/script/loop/approval
-- Shared inspector primitives (Field, RenameField, DependsOnEditor, JsonField)
+- Shared inspector primitives (Field, RenameField, DependsOnEditor,
+  JsonField)
 - NodeInspector shell with capability-driven tabs + selection state
 - 7 per-variant General Inspectors with schema-correct fields
+- ExecutionTab (idle_timeout, retry, sandbox)
+- ProviderTab (provider, model, fallbackModel, systemPrompt, effort,
+  maxBudgetUsd, thinking, betas)
+- ToolsTab (allowed_tools, denied_tools, output_format)
+- HooksTab (raw JsonField over the schema's keyed-by-event hook map)
+- SkillsMcpTab (skills, mcp)
+- AdvancedTab (data.\_unknown editor + n.unknown editor + capabilities
+  readout)
+- Canvas selection wiring (onNodeClick / onPaneClick)
+- WorkflowBuilder mounts NodeInspector + variant-migration component test
 
-What's still stubbed:
-
-- ExecutionTab, ProviderTab, ToolsTab, HooksTab, SkillsMcpTab, AdvancedTab
-  (rendered as testid placeholders in NodeInspector — Tasks 57–59 fill them)
-- NodeInspector mount point in WorkflowBuilder still says
-  `{/* Phase 4 fills in NodeInspector */}` (Task 60 wires it)
-- Canvas onNodeClick → setSelectedNodeId not yet wired (Task 60)
-
-Verification: 233/233 tests pass · build green · typecheck green ·
-format clean · schema-drift clean.
+Verification: 267/267 tests pass (full monorepo) · all 4 packages build ·
+typecheck green · lint 0 errors · format clean · schema-drift clean.
