@@ -1,0 +1,31 @@
+import type { FC } from 'react';
+import { Field } from '../../components/inspector/shared';
+import type { InspectorProps } from '../shared/types';
+import { GeneralTab } from '../shared/GeneralTab';
+import { textareaStyle } from '../shared/inspectorStyles';
+import type { CancelNodeData } from './data';
+
+export const CancelInspector: FC<InspectorProps<CancelNodeData>> = ({
+  id,
+  data,
+  base,
+  onChange,
+  siblingIds,
+}) => (
+  <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
+    <Field
+      label="Cancel reason"
+      htmlFor={`cancel-${id}`}
+      hint="Reason string shown when this node terminates the workflow."
+    >
+      <textarea
+        id={`cancel-${id}`}
+        aria-label="Cancel reason"
+        value={data.cancel ?? ''}
+        onChange={(e) => onChange({ cancel: e.target.value })}
+        rows={3}
+        style={textareaStyle}
+      />
+    </Field>
+  </GeneralTab>
+);

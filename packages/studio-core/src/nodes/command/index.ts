@@ -1,6 +1,6 @@
 import { commandNodeSchema } from '../../schemas/dag-node';
-import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
+import { CommandInspector } from './Inspector';
 import {
   type CommandNodeData,
   createCommandDefault,
@@ -22,6 +22,6 @@ export const commandVariant: VariantDefinition<CommandNodeData> = {
   fromDag: commandFromDag,
   toDag: commandToDag,
   Renderer: CommandRenderer,
-  Inspector: makeTodoInspector<CommandNodeData>('command'),
+  Inspector: CommandInspector,
   // command has no free-form body text — no renameBodyRefs slot.
 };

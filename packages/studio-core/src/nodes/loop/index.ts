@@ -1,7 +1,7 @@
 import { loopNodeSchema } from '../../schemas/dag-node';
 import { rewriteBodyRefs } from '../shared/renameBodyRefs';
-import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
+import { LoopInspector } from './Inspector';
 import { type LoopNodeData, createLoopDefault, loopCapabilities, loopLibrary } from './data';
 import { loopFromDag } from './fromDag';
 import { LoopRenderer } from './Renderer';
@@ -18,7 +18,7 @@ export const loopVariant: VariantDefinition<LoopNodeData> = {
   fromDag: loopFromDag,
   toDag: loopToDag,
   Renderer: LoopRenderer,
-  Inspector: makeTodoInspector<LoopNodeData>('loop'),
+  Inspector: LoopInspector,
   renameBodyRefs: (data, oldId, newId) => ({
     ...data,
     loop: {

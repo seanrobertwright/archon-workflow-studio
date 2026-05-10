@@ -71,11 +71,11 @@ describe('NodeInspector', () => {
     expect(screen.getByTitle('Variant').textContent).toBe('command');
   });
 
-  it('renders the per-variant General Inspector (TodoInspector placeholder for now)', () => {
+  it('renders the per-variant General Inspector body (Command field for command variant)', () => {
     seedTwoVariants();
     useBuilderStore.getState().setSelectedNodeId('n-cmd');
     render(<NodeInspector />);
-    // General is the active tab on mount; TodoInspector stamps this testid.
-    expect(screen.getByTestId('inspector-todo')).toBeDefined();
+    // General is the active tab on mount; CommandInspector renders a Command field.
+    expect(screen.getByLabelText(/^command$/i)).toBeDefined();
   });
 });

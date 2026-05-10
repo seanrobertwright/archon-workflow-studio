@@ -1,7 +1,7 @@
 import { scriptNodeSchema } from '../../schemas/dag-node';
 import { rewriteBodyRefs } from '../shared/renameBodyRefs';
-import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
+import { ScriptInspector } from './Inspector';
 import {
   type ScriptNodeData,
   createScriptDefault,
@@ -23,7 +23,7 @@ export const scriptVariant: VariantDefinition<ScriptNodeData> = {
   fromDag: scriptFromDag,
   toDag: scriptToDag,
   Renderer: ScriptRenderer,
-  Inspector: makeTodoInspector<ScriptNodeData>('script'),
+  Inspector: ScriptInspector,
   renameBodyRefs: (data, oldId, newId) => ({
     ...data,
     script: rewriteBodyRefs(data.script, oldId, newId),

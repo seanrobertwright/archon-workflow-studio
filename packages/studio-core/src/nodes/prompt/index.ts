@@ -1,7 +1,7 @@
 import { promptNodeSchema } from '../../schemas/dag-node';
 import { rewriteBodyRefs } from '../shared/renameBodyRefs';
-import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
+import { PromptInspector } from './Inspector';
 import {
   type PromptNodeData,
   createPromptDefault,
@@ -23,7 +23,7 @@ export const promptVariant: VariantDefinition<PromptNodeData> = {
   fromDag: promptFromDag,
   toDag: promptToDag,
   Renderer: PromptRenderer,
-  Inspector: makeTodoInspector<PromptNodeData>('prompt'),
+  Inspector: PromptInspector,
   renameBodyRefs: (data, oldId, newId) => ({
     ...data,
     prompt: rewriteBodyRefs(data.prompt, oldId, newId),

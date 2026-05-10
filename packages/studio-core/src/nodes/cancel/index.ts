@@ -1,6 +1,6 @@
 import { cancelNodeSchema } from '../../schemas/dag-node';
-import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
+import { CancelInspector } from './Inspector';
 import {
   type CancelNodeData,
   createCancelDefault,
@@ -22,6 +22,6 @@ export const cancelVariant: VariantDefinition<CancelNodeData> = {
   fromDag: cancelFromDag,
   toDag: cancelToDag,
   Renderer: CancelRenderer,
-  Inspector: makeTodoInspector<CancelNodeData>('cancel'),
+  Inspector: CancelInspector,
   // cancel has no free-form body text — no renameBodyRefs slot.
 };
