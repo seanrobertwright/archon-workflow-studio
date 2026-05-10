@@ -102,15 +102,25 @@ Per user decision on `convertVariant`: when target variant has
 
 ```
 provider, model, allowed_tools, denied_tools, output_format, effort, thinking,
-maxBudgetUsd, systemPrompt, fallbackModel, betas, agents, mcp, skills, context
+maxBudgetUsd, systemPrompt, fallbackModel, betas
 ```
 
-(All universal base fields per `BASE_FIELD_KEYS` *except* `depends_on`, `when`,
-`trigger_rule`, `idle_timeout`, `retry`, `hooks`, `sandbox` — those describe
-flow-control / runtime behaviour and apply to every variant.)
+The list intentionally excludes `mcp`, `skills`, `agents`, and `context` —
+those are runtime-relevant on bash / script / cancel / approval too (a bash
+node may legitimately declare which mcp servers it accesses, which skills it
+needs, etc.). Stripping them on conversion would lose data the user intended
+to keep. Initial implementation included them; narrowed in the post-Task-56
+review pass after surfacing the trade-off explicitly.
+
+Flow-control + always-kept base fields: `depends_on`, `when`, `trigger_rule`,
+`idle_timeout`, `retry`, `hooks`, `sandbox` — these describe execution
+behaviour and apply to every variant.
 
 Variants with `honorsAiFields: false`: `bash`, `script`, `cancel`, `approval`.
 (Per `*/data.ts` exports.)
+
+The set lives at the top of `packages/studio-core/src/store/builder-store.ts`
+as the `AI_BASE_KEYS` module constant.
 
 ---
 

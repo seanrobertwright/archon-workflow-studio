@@ -144,4 +144,66 @@ describe('builder-store.convertVariant (capability-aware migration)', () => {
   it('throws on unknown node id', () => {
     expect(() => useBuilderStore.getState().convertVariant('does-not-exist', 'bash')).toThrow();
   });
+
+  it('does NOT duplicate data._unknown into n.unknown (preservation invariant)', () => {
+    // Regression: pickBaseFields routes the variant-data `_unknown` key into
+    // its `unknown` bucket, which previously got merged into n.unknown — the
+    // forward-compat bag silently duplicated on every conversion.
+    useBuilderStore.getState().clearWorkflow();
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        {
+          id: 'n1',
+          variant: 'command',
+          data: { command: 'classify', _unknown: { foreign_subkey: 'preserve me' } },
+          base: {},
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().convertVariant('n1', 'bash');
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    // data._unknown stays as the single source of truth for variant-data forward-compat.
+    expect((node.data as Record<string, unknown>)._unknown).toMatchObject({
+      foreign_subkey: 'preserve me',
+    });
+    // n.unknown (top-level forward-compat) MUST NOT contain a stray `_unknown` key.
+    expect(node.unknown._unknown).toBeUndefined();
+  });
+
+  it('does NOT park mcp/skills/agents/context when converting to a non-AI variant', () => {
+    // Judgment-call narrowing: a bash/script/cancel/approval node may legitimately
+    // declare mcp servers and skills (those are runtime-relevant even without AI).
+    // Only fields that are AI-inference-specific (provider, model, sampling knobs,
+    // tool gating) get parked. context is also kept (it's data-only context, not AI).
+    useBuilderStore.getState().clearWorkflow();
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'wf', description: '', base: {}, unknown: {} },
+      nodes: [
+        {
+          id: 'n1',
+          variant: 'command',
+          data: { command: 'classify', _unknown: {} },
+          base: {
+            provider: 'anthropic', // AI-only — should park
+            mcp: ['filesystem'], // runtime-relevant — should stay
+            skills: ['archon-fix'], // runtime-relevant — should stay
+            agents: ['planner'], // runtime-relevant — should stay
+            context: { hint: 'x' }, // data-context — should stay
+          },
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().convertVariant('n1', 'bash');
+    const node = useBuilderStore.getState().nodes.find((n) => n.id === 'n1')!;
+    // Parked
+    expect(node.base.provider).toBeUndefined();
+    // Kept across non-AI conversion
+    expect(node.base.mcp).toEqual(['filesystem']);
+    expect(node.base.skills).toEqual(['archon-fix']);
+    expect(node.base.agents).toEqual(['planner']);
+    expect(node.base.context).toEqual({ hint: 'x' });
+  });
 });

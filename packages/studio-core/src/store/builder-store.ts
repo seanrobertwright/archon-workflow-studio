@@ -6,6 +6,34 @@ import { makeUniqueId } from '../nodes/shared/makeUniqueId';
 import { pickBaseFields } from '../nodes/shared/pickBaseFields';
 import { mergePatch } from './mergePatch';
 
+/**
+ * Base fields whose semantics are AI-inference-specific (provider routing,
+ * sampling knobs, tool gating, structured output). When `convertVariant`
+ * targets a variant with `honorsAiFields: false`, these get stripped from
+ * `n.base` and stashed in `data._unknown._converted_from` so a future
+ * convert-back can restore them.
+ *
+ * Deliberately NARROWER than "every base field": `mcp`, `skills`, `agents`,
+ * and `context` are runtime-relevant on bash / script / cancel / approval
+ * too (a bash node may declare which mcp servers it accesses), so they're
+ * kept across conversion. `depends_on` / `when` / `retry` / `hooks` /
+ * `sandbox` / `idle_timeout` / `trigger_rule` are flow-control and always
+ * kept regardless.
+ */
+const AI_BASE_KEYS: ReadonlySet<string> = new Set([
+  'provider',
+  'model',
+  'allowed_tools',
+  'denied_tools',
+  'output_format',
+  'effort',
+  'thinking',
+  'maxBudgetUsd',
+  'systemPrompt',
+  'fallbackModel',
+  'betas',
+]);
+
 export interface WorkflowMeta {
   name: string;
   description: string;
@@ -137,54 +165,28 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
     if (!target) throw new Error(`convertVariant: unknown variant '${newVariantId}'`);
     if (node.variant === newVariantId) return;
 
-    // Re-classify CURRENT variant-specific data under the TARGET variant's lens.
-    // Anything the target variant cannot accept lands in `parkedFromData`.
+    // Re-classify the source's variant-specific data under the TARGET variant's
+    // lens. pickBaseFields buckets every recognised key into variantSpecific /
+    // base / unknown; anything the target can't accept ends up in `unknown`.
     const currentDagShape = (node.data as Record<string, unknown>) ?? {};
     const reclassified = pickBaseFields(currentDagShape, newVariantId);
-    const parkedFromData: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(currentDagShape)) {
-      if (k === '_unknown') continue;
-      if (
-        !(k in reclassified.variantSpecific) &&
-        !(k in reclassified.base) &&
-        !(k in reclassified.unknown)
-      ) {
-        parkedFromData[k] = v;
-      }
-    }
-    // pickBaseFields routes "stranger" keys into `unknown`. For convertVariant,
-    // anything that was variant-specific to the source but not to the target
-    // should be PARKED, not silently demoted to unknown. Move them.
-    const sourceVariant = defaultRegistry[node.variant];
-    const sourceVarSpecificKeys = new Set(
-      Object.keys((sourceVariant.toDag(node.data as never) as Record<string, unknown>) ?? {}),
-    );
-    for (const k of Object.keys(reclassified.unknown)) {
-      if (sourceVarSpecificKeys.has(k)) {
-        parkedFromData[k] = reclassified.unknown[k];
-        delete reclassified.unknown[k];
-      }
-    }
 
-    // Capability-aware base-field parking: when target ignores AI fields, strip
-    // and park them. Flow-control base fields stay.
-    const AI_BASE_KEYS = new Set([
-      'provider',
-      'model',
-      'allowed_tools',
-      'denied_tools',
-      'output_format',
-      'effort',
-      'thinking',
-      'maxBudgetUsd',
-      'systemPrompt',
-      'fallbackModel',
-      'betas',
-      'agents',
-      'mcp',
-      'skills',
-      'context',
-    ]);
+    // The variant-data forward-compat bag (`data._unknown`) is preserved
+    // verbatim below — strip it from `reclassified.unknown` so it is NOT
+    // duplicated into `n.unknown` on the merge at the bottom of this action.
+    delete reclassified.unknown._unknown;
+
+    // Anything in `reclassified.unknown` at this point is a key that was
+    // variant-specific to the source but isn't recognised by the target —
+    // park it under `_converted_from` so a convert-back can restore it.
+    const parkedFromData: Record<string, unknown> = { ...reclassified.unknown };
+    reclassified.unknown = {};
+
+    // Capability-aware base-field parking: when target ignores AI fields,
+    // strip the AI-inference-specific subset (see AI_BASE_KEYS) and park.
+    // Flow-control base fields (depends_on, when, retry, hooks, sandbox,
+    // trigger_rule, idle_timeout) and runtime-relevant lists (mcp, skills,
+    // agents, context) are kept regardless.
     const newBase: Record<string, unknown> = { ...node.base };
     const parkedFromBase: Record<string, unknown> = {};
     if (!target.capabilities.honorsAiFields) {
@@ -196,13 +198,12 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
       }
     }
 
-    const previousUnknown =
-      ((node.data as Record<string, unknown>)?._unknown as Record<string, unknown>) ?? {};
+    const previousDataUnknown = (currentDagShape._unknown as Record<string, unknown>) ?? {};
     const newData: Record<string, unknown> = {
       ...(target.createDefault() as Record<string, unknown>),
       ...reclassified.variantSpecific,
       _unknown: {
-        ...previousUnknown,
+        ...previousDataUnknown,
         _converted_from: {
           variant: node.variant,
           ...parkedFromData,
@@ -213,15 +214,7 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
 
     set((s) => ({
       nodes: s.nodes.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              variant: newVariantId,
-              data: newData,
-              base: newBase,
-              unknown: mergePatch(n.unknown, reclassified.unknown),
-            }
-          : n,
+        n.id === id ? { ...n, variant: newVariantId, data: newData, base: newBase } : n,
       ),
     }));
   },
