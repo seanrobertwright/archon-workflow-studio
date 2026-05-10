@@ -66,6 +66,81 @@ describe('builder-store', () => {
     expect(act.base.when).toBe("$sort.output == 'ok'");
   });
 
+  it('renameNode cascades through body-text refs in prompt/bash/script/loop/approval', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'w', description: 'd', base: {}, unknown: {} },
+      nodes: [
+        { id: 'classify', variant: 'command', data: { command: 'c' }, base: {}, unknown: {} },
+        {
+          id: 'p1',
+          variant: 'prompt',
+          data: { prompt: 'Use $classify.output to decide' },
+          base: {},
+          unknown: {},
+        },
+        {
+          id: 'b1',
+          variant: 'bash',
+          data: { bash: 'echo "$classify.output"' },
+          base: {},
+          unknown: {},
+        },
+        {
+          id: 's1',
+          variant: 'script',
+          data: { script: "console.log('$classify.output')", runtime: 'bun' as const },
+          base: {},
+          unknown: {},
+        },
+        {
+          id: 'l1',
+          variant: 'loop',
+          data: {
+            loop: {
+              prompt: 'Iterate using $classify.output',
+              until: 'COMPLETE',
+              max_iterations: 5,
+              fresh_context: false,
+            },
+          },
+          base: {},
+          unknown: {},
+        },
+        {
+          id: 'a1',
+          variant: 'approval',
+          data: { approval: { message: 'Approve $classify.output?' } },
+          base: {},
+          unknown: {},
+        },
+        // Negative case: word boundary — $classify_v2 should NOT be rewritten.
+        {
+          id: 'p2',
+          variant: 'prompt',
+          data: { prompt: '$classify_v2.output is unrelated' },
+          base: {},
+          unknown: {},
+        },
+      ],
+    });
+    useBuilderStore.getState().renameNode('classify', 'sort');
+    const find = (id: string) =>
+      useBuilderStore.getState().nodes.find((n) => n.id === id)! as {
+        data: Record<string, unknown>;
+      };
+    expect(find('p1').data.prompt).toBe('Use $sort.output to decide');
+    expect(find('b1').data.bash).toBe('echo "$sort.output"');
+    expect(find('s1').data.script).toBe("console.log('$sort.output')");
+    expect((find('l1').data.loop as Record<string, unknown>).prompt).toBe(
+      'Iterate using $sort.output',
+    );
+    expect((find('a1').data.approval as Record<string, unknown>).message).toBe(
+      'Approve $sort.output?',
+    );
+    // Word-boundary protection
+    expect(find('p2').data.prompt).toBe('$classify_v2.output is unrelated');
+  });
+
   it('renameNode rejects collisions', () => {
     useBuilderStore.getState().loadWorkflow({
       meta: { name: 'w', description: 'd', base: {}, unknown: {} },

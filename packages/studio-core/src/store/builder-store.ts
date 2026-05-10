@@ -284,9 +284,13 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
       if (typeof w === 'string') {
         next.base.when = w.replace(new RegExp(`\\$${escapeRegExp(oldId)}\\b`, 'g'), `$${newId}`);
       }
-      // Phase 4 will extend with: $nodeId.output body refs in prompt/bash/script/
-      // loop.prompt/approval.message via per-variant `renameBodyRefs(data, oldId, newId)`.
-      // No Phase 1 UI exposes renameNode, so the gap is dead-code-only today.
+      // 4. body-text refs ($oldId.output… in prompt/bash/script/loop.prompt/
+      //    approval.message). Each variant declares its own rewriter via the
+      //    optional `renameBodyRefs` slot; variants without body text omit it.
+      const variantDef = defaultRegistry[next.variant];
+      if (variantDef.renameBodyRefs) {
+        next.data = variantDef.renameBodyRefs(next.data as never, oldId, newId);
+      }
       return next;
     };
     set({ nodes: state.nodes.map(renameRefs) });

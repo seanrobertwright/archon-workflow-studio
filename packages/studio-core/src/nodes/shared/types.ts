@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, FC } from 'react';
 import type { Node as RFNode, NodeProps } from '@xyflow/react';
 import type { z } from 'zod';
 import type { VariantId } from '../registry';
@@ -89,5 +89,69 @@ export interface VariantDefinition<TData> {
    * so we wrap with `RFNode<DagNodeData<TData>, VariantId>`.
    */
   Renderer: ComponentType<NodeProps<RFNode<DagNodeData<TData>, VariantId>>>;
-  // Phase 4 adds: Inspector.
+  /**
+   * Per-variant General-tab inspector. Receives the live data slice and a
+   * deep-merge `onChange` patch callback. The shared base-field tabs
+   * (Execution / Provider / Tools / Hooks / Skills+MCP / Advanced) live in
+   * the NodeInspector shell and don't go through this slot.
+   */
+  Inspector: FC<InspectorProps<TData>>;
+  /**
+   * Optional rewrite of `$<oldId>.output…` body-text references when the
+   * upstream node id changes. Implemented by variants with free-form body
+   * text (prompt / bash / script / loop.prompt / approval.message). Variants
+   * without body text omit this slot — the store's renameNode just skips it.
+   *
+   * Folded in from Task 52.5's anticipated Phase-1 gap (body-ref cascade).
+   */
+  renameBodyRefs?: (data: TData, oldId: string, newId: string) => TData;
+}
+
+/** The set of inspector tab identifiers. Capability-gated by `tabsForVariant`. */
+export type InspectorTabId =
+  | 'general'
+  | 'execution'
+  | 'provider'
+  | 'tools'
+  | 'hooks'
+  | 'skills-mcp'
+  | 'advanced';
+
+/**
+ * Props every per-variant General Inspector and every shared base-field tab
+ * receives. `onChange` deep-merges via `mergePatch` and routes each key to its
+ * correct BuilderNode bucket via `pickBaseFields` — see
+ * `docs/superpowers/plans/phase-4-drift-notes.md` §2 for the design.
+ */
+export interface InspectorProps<TData> {
+  /** Node id — passed to store actions; never edited via this prop. */
+  id: string;
+  /** Live variant-specific data slice from the store. */
+  data: TData;
+  /** Live base-fields slice from the store (depends_on, when, provider, etc.). */
+  base: Record<string, unknown>;
+  /** Top-level forward-compat keys (rendered by Advanced tab). */
+  unknown: Record<string, unknown>;
+  /** Patch the node — keys auto-route to the right bucket and deep-merge. */
+  onChange: (patch: Record<string, unknown>) => void;
+  /** Sibling node ids — for DependsOnEditor autocomplete. */
+  siblingIds: string[];
+}
+
+/**
+ * Capability-driven tab visibility. Pure function — drives both the
+ * NodeInspector tab list and the §12.2 "tab visibility" component test
+ * without any per-component variant branching.
+ *
+ * - General + Execution + Advanced are present for every variant.
+ * - Provider / Tools / Hooks / Skills+MCP appear only when the variant
+ *   `honorsAiFields` (i.e. command, prompt, loop).
+ */
+export function tabsForVariant(v: VariantDefinition<unknown>): InspectorTabId[] {
+  const tabs: InspectorTabId[] = ['general', 'execution'];
+  if (v.capabilities.honorsAiFields) {
+    tabs.push('provider', 'tools', 'hooks', 'skills-mcp');
+  }
+  tabs.push('advanced');
+  return tabs;
 }

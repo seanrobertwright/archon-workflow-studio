@@ -1,4 +1,6 @@
 import { approvalNodeSchema } from '../../schemas/dag-node';
+import { rewriteBodyRefs } from '../shared/renameBodyRefs';
+import { makeTodoInspector } from '../shared/TodoInspector';
 import type { VariantDefinition } from '../shared/types';
 import {
   type ApprovalNodeData,
@@ -21,4 +23,12 @@ export const approvalVariant: VariantDefinition<ApprovalNodeData> = {
   fromDag: approvalFromDag,
   toDag: approvalToDag,
   Renderer: ApprovalRenderer,
+  Inspector: makeTodoInspector<ApprovalNodeData>('approval'),
+  renameBodyRefs: (data, oldId, newId) => ({
+    ...data,
+    approval: {
+      ...data.approval,
+      message: rewriteBodyRefs(data.approval.message, oldId, newId),
+    },
+  }),
 };
