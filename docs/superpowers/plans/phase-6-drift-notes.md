@@ -162,3 +162,33 @@ node"), update `mk()` to include something node-disambiguating (an array
 index or React Flow `internalId`) in the path, so each duplicate produces a
 distinct `issueId`. Don't add it to the rule string — that would break the
 "one rule = one user-facing problem class" invariant.
+
+---
+
+## Drift 6.2.1 — Decision-branch ref-integrity rule dropped (no routing edges in schema)
+
+**Plan assumed:** A `decision` variant on `DagNode` with
+`base.branches: Array<{ on: string; goto: string }>`. The plan's
+`runGraphRules` walked these branch targets for ref-integrity
+(lines 387–397 of the plan), and the spec included a
+"flags unknown decision branch targets" test.
+
+**Reality:** The `decision` variant does not exist in the current
+`DagNode` schema. The discriminated union members are:
+command, prompt, bash, script, loop, approval, cancel.
+There are no routing edges (`on_success`, `on_failure`, `goto`)
+at the schema level — `hooks` are SDK-style event handlers
+(PreToolUse, PostToolUse, etc.), not flow-routing edges.
+
+**What shipped:**
+- The "flags unknown decision branch targets" test was dropped (5 tests
+  instead of 6).
+- The decision-branch loop in `graph.ts` was dropped (~10 lines shorter).
+- Ref-integrity in `runGraphRules` is currently limited to `depends_on`
+  — the only node-to-node reference field in the real schema.
+
+**Follow-up:** If/when the schema gains decision-routing (e.g., a
+`DecisionNode` with branch targets), add a new `graph.ref.branch.unknown`
+rule and restore the dropped test. The `err()` helper and three-color DFS
+in `graph.ts` are already in place; the branch loop is a straightforward
+addition.
