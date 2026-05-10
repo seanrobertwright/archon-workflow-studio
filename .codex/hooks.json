@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Bash|Grep|Edit|Write|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR/.claude/scripts\" && PATH=\"$PATH:/root/.local/bin\" uv run python 'E:\\Projects\\Archon Workflow Studio\\.codex\\hooks\\block-secrets.py'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR/.claude/scripts\" && PATH=\"$PATH:/root/.local/bin\" uv run python 'E:\\Projects\\Archon Workflow Studio\\.codex\\hooks\\pre-compact-flush.py'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR/.claude/scripts\" && PATH=\"$PATH:/root/.local/bin\" uv run python 'E:\\Projects\\Archon Workflow Studio\\.codex\\hooks\\session-start-context.py'",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
