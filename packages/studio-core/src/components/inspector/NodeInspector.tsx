@@ -5,12 +5,12 @@ import { tabsForVariant, type InspectorProps } from '../../nodes/shared/types';
 import { useInspectorPatch } from '../../hooks/useInspectorPatch';
 import { RenameField } from './shared';
 import { InspectorTabs } from './InspectorTabs';
+import { ExecutionTab } from './tabs/ExecutionTab';
+import { ProviderTab } from './tabs/ProviderTab';
 
-// Stubs for the shared base-field tabs. Tasks 57–59 replace these with the
-// real tab implementations. They render testable markers so Task 55's tests
-// can verify tab switching without depending on tab content.
-const StubExecution = () => <div data-testid="tab-stub-execution">Execution (Task 57)</div>;
-const StubProvider = () => <div data-testid="tab-stub-provider">Provider (Task 57)</div>;
+// Stubs for shared base-field tabs not yet implemented (Tasks 58–59 replace
+// these with real components). They render testable markers so existing tests
+// can still verify tab switching without depending on tab content.
 const StubTools = () => <div data-testid="tab-stub-tools">Tools (Task 58)</div>;
 const StubHooks = () => <div data-testid="tab-stub-hooks">Hooks (Task 58)</div>;
 const StubSkillsMcp = () => <div data-testid="tab-stub-skills-mcp">Skills+MCP (Task 59)</div>;
@@ -78,9 +78,14 @@ export function NodeInspector() {
             case 'general':
               return <General {...(generalProps as InspectorProps<never>)} />;
             case 'execution':
-              return <StubExecution />;
+              return (
+                <ExecutionTab
+                  {...(generalProps as InspectorProps<unknown>)}
+                  forbidsRetry={variant.capabilities.forbidsRetry}
+                />
+              );
             case 'provider':
-              return <StubProvider />;
+              return <ProviderTab {...(generalProps as InspectorProps<unknown>)} />;
             case 'tools':
               return <StubTools />;
             case 'hooks':
