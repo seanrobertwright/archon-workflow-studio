@@ -1,5 +1,6 @@
 import type { DagNode } from '../../schemas';
-import { type Issue, issueId } from '../types';
+import { type Issue } from '../types';
+import { mk as mkIssue } from './helpers';
 
 /** Pure: runs on every render. Cheap. Errors only. */
 export function runStructuralRules(nodes: readonly DagNode[]): Issue[] {
@@ -213,12 +214,5 @@ function requiredFieldRules(n: DagNode): Issue[] {
 
 function mk(rule: string, nodeId: string, field: string | undefined, message: string): Issue {
   const path = { nodeId, ...(field !== undefined ? { field } : {}) };
-  return {
-    id: issueId(rule, path, message),
-    rule,
-    severity: 'error',
-    source: 'client-instant',
-    message,
-    path,
-  };
+  return mkIssue(rule, 'error', 'client-instant', path, message);
 }

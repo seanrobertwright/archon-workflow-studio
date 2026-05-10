@@ -192,3 +192,87 @@ at the schema level — `hooks` are SDK-style event handlers
 rule and restore the dropped test. The `err()` helper and three-color DFS
 in `graph.ts` are already in place; the branch loop is a straightforward
 addition.
+
+---
+
+## Drift 6.3.1 — `when` and `depends_on` are flat on DagNode (plan assumed `base`)
+
+**Plan assumed:**
+```ts
+const node = { id: 'a', type: 'prompt', base: { prompt: 'x', when: "..." } } as DagNode;
+```
+The plan's `whenRules()` read `(node.base as { when? }).when`.
+
+**Reality:** Both `when` and `depends_on` are flat on the node (as established in
+drift 6.1.1). `dagNodeBaseSchema` is a Zod schema name, not a runtime wrapper object.
+
+**What shipped:** `whenRules()` reads `(node as unknown as Record<string, unknown>).when`.
+Test helpers use flat shape: `{ id, prompt: body, depends_on: deps } as unknown as DagNode`.
+
+---
+
+## Drift 6.3.2 — `transitiveUpstream` adapter at call site
+
+**Plan assumed:** `transitiveUpstream(node.id, nodes)` where `nodes` is `readonly DagNode[]`.
+
+**Reality:** `transitiveUpstream` (written for Phase 5 BuilderNode) expects
+`NodeLike { id: string; base?: { depends_on?: string[] } }`. Since DagNode has flat
+`depends_on`, calling directly would return empty sets for every node.
+
+**What shipped:** An adapter array is built once per `runContentRules` call:
+```ts
+const adapted = nodes.map(n => ({ id: n.id, base: { depends_on: n.depends_on } }));
+```
+`transitiveUpstream` is NOT refactored — keeping Phase 5 blast radius at zero.
+
+---
+
+## Drift 6.3.3 — `bodyText` reads explicit flat fields, not `Object.values(base)`
+
+**Plan assumed:**
+```ts
+const base = (node.base ?? {}) as Record<string, unknown>;
+return Object.values(base).filter((v): v is string => typeof v === 'string').join('\n');
+```
+This would also catch non-templated fields (e.g., `runtime`, `model`, `id`).
+
+**Reality:** DagNode has no `base` wrapper, and iterating all string values would
+capture condition strings (`when`, `loop.until`) and config identifiers that are not
+user-authored template bodies.
+
+**What shipped:** `bodyText()` reads only the fields that are genuinely templated
+user content:
+
+| Field | Node variant | Included |
+|---|---|---|
+| `prompt` | PromptNode | yes |
+| `command` | CommandNode | yes |
+| `bash` | BashNode | yes |
+| `script` | ScriptNode | yes |
+| `cancel` | CancelNode | yes |
+| `approval.message` | ApprovalNode | yes (nested) |
+| `loop.prompt` | LoopNode | yes (nested) |
+| `when` | all variants | **no** — condition expression |
+| `loop.until` | LoopNode | **no** — condition expression |
+| `loop.max_iterations` | LoopNode | **no** — numeric config |
+
+---
+
+## Drift 6.3.4 — Shared `mk()` helper extracted to `validation/rules/helpers.ts`
+
+**Background:** Task 6.2 code review flagged that `structural.ts` and `graph.ts`
+each had a private `mk()`/`err()` issue factory with incompatible signatures,
+making it hard to maintain consistent issue shape.
+
+**What shipped:** A single shared factory in `packages/studio-core/src/validation/rules/helpers.ts`:
+```ts
+export function mk(rule, severity, source, path, message): Issue
+```
+
+Both `structural.ts` and `graph.ts` now delegate to this helper. Their local
+wrappers remain (`mk()` in structural, `err()` in graph) to preserve call-site
+signature compatibility — they now just forward to the shared helper.
+
+The `issueId` hash inputs are `(rule, path, message)` only — severity and source
+are NOT part of the hash. Refactoring these call sites does not perturb any
+existing issue IDs. All 354 tests pass unchanged after the refactor.

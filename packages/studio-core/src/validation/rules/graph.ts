@@ -1,5 +1,6 @@
 import type { DagNode } from '../../schemas';
-import { type Issue, issueId } from '../types';
+import { type Issue } from '../types';
+import { mk as mkIssue } from './helpers';
 
 // Three-color DFS constants: WHITE=0, GRAY=1, BLACK=2.
 type Color = 0 | 1 | 2;
@@ -109,12 +110,5 @@ export function runGraphRules(nodes: readonly DagNode[]): Issue[] {
 }
 
 function err(rule: string, path: Issue['path'], message: string): Issue {
-  return {
-    id: issueId(rule, path, message),
-    rule,
-    severity: 'error',
-    source: 'client-debounced',
-    message,
-    path,
-  };
+  return mkIssue(rule, 'error', 'client-debounced', path, message);
 }
