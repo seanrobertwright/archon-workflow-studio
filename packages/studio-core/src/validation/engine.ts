@@ -59,6 +59,8 @@ export class ValidationEngine {
   private inflightAbort: AbortController | null = null;
 
   private listeners = new Set<Listener>();
+  private cachedSnapshot: EngineSnapshot | null = null;
+  private notifying = false;
 
   constructor(opts: EngineOptions = {}) {
     this.debounceMs = opts.debounceMs ?? 300;
@@ -71,12 +73,22 @@ export class ValidationEngine {
     return () => this.listeners.delete(fn);
   }
 
+  /**
+   * Returns the current composed snapshot. Memoized — the same reference is
+   * returned across calls until any tier's issue list, `isValidating`, or
+   * `lastRunAt` changes. Task 6.5's `useSyncExternalStore` requires this
+   * referential stability (a new object each call would cause infinite
+   * re-renders in React 18+ strict mode). The cache is invalidated by
+   * `notify()` before listeners fire (drift 6.4.5).
+   */
   snapshot(): EngineSnapshot {
-    return {
+    if (this.cachedSnapshot) return this.cachedSnapshot;
+    this.cachedSnapshot = {
       issues: [...this.instantIssues, ...this.debouncedIssues, ...this.serverIssues],
       isValidating: this.isValidating,
       lastRunAt: this.lastRunAt,
     };
+    return this.cachedSnapshot;
   }
 
   update(input: EngineInput): void {
@@ -89,6 +101,9 @@ export class ValidationEngine {
   dispose(): void {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.inflightAbort?.abort();
+    // Bump seq so any in-flight validateWorkflow that resolves after dispose
+    // sees mySeq !== this.seq and exits without writing to inert state (M1).
+    this.seq++;
     this.listeners.clear();
   }
 
@@ -135,6 +150,10 @@ export class ValidationEngine {
     try {
       const res = await this.client.validateWorkflow(this.input.definition);
       if (mySeq !== this.seq) return; // superseded by a newer run
+      // NOTE (M3): server messages are unconstrained free-form strings and may
+      // contain `|`, which is the `issueId` djb2 key separator. The hash is
+      // advisory (React keys / scroll preservation), not authoritative, so
+      // collisions are visually harmless. See `issueId` docstring in types.ts.
       this.serverIssues = (res.errors ?? []).map((msg) => ({
         id: issueId('server.unknown', {}, msg),
         rule: 'server.unknown',
@@ -159,13 +178,28 @@ export class ValidationEngine {
       ];
     } finally {
       if (mySeq === this.seq) {
-        this.isValidating = false;
+        // Only clear isValidating if no fresh debounce is queued (I2).
+        // Otherwise a rapid edit during a server call would briefly flicker
+        // the UI to "settled" between the server resolve and the next debounce.
+        if (!this.debounceTimer) this.isValidating = false;
         this.notify();
       }
     }
   }
 
   private notify(): void {
-    for (const l of this.listeners) l();
+    // Invalidate cached snapshot BEFORE listeners observe (so a listener that
+    // calls snapshot() inside its callback sees fresh state). Re-entrancy
+    // guard (M2) prevents a listener-triggered update from re-firing all
+    // listeners synchronously — the outer notify call will pick up the new
+    // state on its remaining iteration since the cache is already invalid.
+    this.cachedSnapshot = null;
+    if (this.notifying) return;
+    this.notifying = true;
+    try {
+      for (const l of this.listeners) l();
+    } finally {
+      this.notifying = false;
+    }
   }
 }

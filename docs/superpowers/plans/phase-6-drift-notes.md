@@ -348,9 +348,12 @@ this.isValidating = false;
 this.notify();
 ```
 This ensures any pending `runServer` sees `mySeq !== this.seq` and exits without
-writing. No test exercises this race — it requires a server call to be in-flight
-at the exact moment new client errors appear — but the fix is one-liner cheap and
-removes a real correctness hole.
+writing. **Test-covered as of post-review:** the
+`clears serverIssues when client errors appear mid-server-call` test in
+`engine.spec.ts` exercises this race directly — clean update → server call in
+flight at t≈10ms → client error introduced at t≈25ms → second debounce at
+t≈35ms aborts + bumps seq + clears `serverIssues` → stale resolve at t≈70ms is
+dropped via the seq guard. Assertion: no server issue survives.
 
 ---
 
@@ -385,3 +388,38 @@ present on all union members).
 **What shipped:** `Partial<Record<string, unknown>>` matches the established
 pattern from `structural.spec.ts` and avoids the union member type mismatch.
 The cast `as unknown as DagNode` handles the type bridge.
+
+---
+
+## Drift 6.4.5 — Snapshot memoization contract (post-review C1)
+
+**Background:** Code review (post-Task-6.4) flagged that `snapshot()` allocated
+a fresh array+object on every call. Task 6.5 will pass `engine.snapshot` to
+React's `useSyncExternalStore`, which requires the same reference between
+unchanged states. A new object per call would trigger
+`Warning: The result of getSnapshot should be cached to avoid an infinite
+loop` and, in prod, can actually loop.
+
+**What shipped:**
+- Added `private cachedSnapshot: EngineSnapshot | null = null` and
+  `private notifying = false` fields.
+- `snapshot()` returns `cachedSnapshot` if set, else composes a new object and
+  caches it.
+- `notify()` invalidates `cachedSnapshot = null` BEFORE iterating listeners
+  (so a listener that re-reads `snapshot()` sees the fresh value), and uses
+  a `notifying` flag to prevent synchronous re-entrant notification storms
+  (M2).
+- Test `returns a stable snapshot reference between mutations` asserts
+  `a === b` for back-to-back `snapshot()` calls with no intervening state
+  change.
+
+**Contract for Task 6.5:** `useSyncExternalStore(engine.subscribe, engine.snapshot)`
+is safe — `snapshot()` returns a stable reference until the engine notifies,
+at which point it returns a fresh reference once and caches it.
+
+**Bonus hardening included in this round:**
+- `dispose()` bumps `seq` (M1) so post-dispose server resolves no-op cleanly.
+- `runServer`'s `finally` only clears `isValidating` when `!this.debounceTimer`
+  (I2) — avoids flicker between server resolve and a queued debounce.
+- Comment near server-issue construction notes the `|`-separator issueId
+  caveat for unconstrained server messages (M3).

@@ -101,6 +101,32 @@ describe('ValidationEngine', () => {
     expect(msgs).not.toContain('stale');
   });
 
+  it('clears serverIssues when client errors appear mid-server-call', async () => {
+    const client = stubClient(async () => {
+      await sleep(60);
+      return { valid: false, errors: ['stale server claim'] };
+    });
+    const e = new ValidationEngine({ debounceMs: 10, client });
+    // Clean nodes → server tier fires after debounce
+    e.update({ nodes: [node('a')], definition: { name: 'w' } as never });
+    await sleep(25); // debounce fires (t=10), runServer in flight (~35ms remain)
+    // Introduce a client error → triggers the else-branch race path
+    e.update({ nodes: [node('')], definition: { name: 'w' } as never });
+    // Second debounce fires (~t=35), aborts + bumps seq + clears serverIssues.
+    // Stale promise resolves around t=70 with mySeq !== this.seq, must no-op.
+    await sleep(80);
+    const serverIssues = e.snapshot().issues.filter((i) => i.source === 'server');
+    expect(serverIssues).toEqual([]);
+  });
+
+  it('returns a stable snapshot reference between mutations', () => {
+    const e = new ValidationEngine({ debounceMs: 50 });
+    e.update({ nodes: [node('a')] });
+    const a = e.snapshot();
+    const b = e.snapshot();
+    expect(a).toBe(b); // same reference until next state change
+  });
+
   it('notifies subscribers on snapshot change', async () => {
     const seen: number[] = [];
     const e = new ValidationEngine({ debounceMs: 20 });
