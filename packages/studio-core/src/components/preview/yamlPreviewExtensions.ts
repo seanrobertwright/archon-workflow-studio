@@ -16,7 +16,14 @@ export function yamlSearch(): Extension {
 }
 
 export function readOnlyExt(): Extension {
-  return [EditorState.readOnly.of(true), EditorView.editable.of(false)];
+  // editable.of(false) blocks typing AND removes the contenteditable focus
+  // surface. Restore focusability with an explicit tabindex so clicks land
+  // focus on .cm-content — required for Ctrl+F (searchKeymap) to fire.
+  return [
+    EditorState.readOnly.of(true),
+    EditorView.editable.of(false),
+    EditorView.contentAttributes.of({ tabindex: '0' }),
+  ];
 }
 
 // ---------- pure resolver ----------
