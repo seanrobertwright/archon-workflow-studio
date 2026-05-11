@@ -13,14 +13,16 @@ export const CommandInspector: FC<InspectorProps<CommandNodeData>> = ({
   siblingIds,
 }) => (
   <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-    <Field label="Command" htmlFor={`cmd-${id}`} hint="Name of a command in .archon/commands/.">
-      <input
-        id={`cmd-${id}`}
-        aria-label="Command"
-        value={data.command ?? ''}
-        onChange={(e) => onChange({ command: e.target.value })}
-        style={inputStyle}
-      />
-    </Field>
+    <div data-field="command">
+      <Field label="Command" htmlFor={`cmd-${id}`} hint="Name of a command in .archon/commands/.">
+        <input
+          id={`cmd-${id}`}
+          aria-label="Command"
+          value={data.command ?? ''}
+          onChange={(e) => onChange({ command: e.target.value })}
+          style={inputStyle}
+        />
+      </Field>
+    </div>
   </GeneralTab>
 );

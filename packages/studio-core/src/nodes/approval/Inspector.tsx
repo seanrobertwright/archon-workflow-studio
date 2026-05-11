@@ -23,18 +23,20 @@ export const ApprovalInspector: FC<InspectorProps<ApprovalNodeData>> = ({
 
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field
-        label="Message"
-        hint="Shown to the human reviewer when execution pauses. Type $ for upstream references."
-      >
-        <CmEditor
-          ariaLabel="Message"
-          value={a.message ?? ''}
-          onChange={(next) => patchApproval({ message: next })}
-          extensions={extensions}
-          minHeight={80}
-        />
-      </Field>
+      <div data-field="approval.message">
+        <Field
+          label="Message"
+          hint="Shown to the human reviewer when execution pauses. Type $ for upstream references."
+        >
+          <CmEditor
+            ariaLabel="Message"
+            value={a.message ?? ''}
+            onChange={(next) => patchApproval({ message: next })}
+            extensions={extensions}
+            minHeight={80}
+          />
+        </Field>
+      </div>
       <Field
         label="Capture response"
         htmlFor={`approval-cap-${id}`}

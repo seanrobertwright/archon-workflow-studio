@@ -25,6 +25,12 @@ export interface WorkflowBuilderProps {
   cwd: string;
   /** The current workflow's name — also used for position keying. */
   workflowName: string;
+  /**
+   * Called when the user clicks the Save button. When omitted, the Save button
+   * is not rendered (caller opts in explicitly). The button is disabled when
+   * there are active validation errors.
+   */
+  onSave?: () => void;
 }
 
 /**
@@ -35,19 +41,37 @@ function WorkflowBuilderInner({
   cwd,
   workflowName,
   positions,
+  onSave,
 }: {
   cwd: string;
   workflowName: string;
   positions: ReturnType<typeof usePositionPersistence>;
+  onSave?: () => void;
 }) {
   const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const { issues, isValidating, focusIssue } = useValidation();
 
+  const hasErrors = useMemo(() => issues.some((i) => i.severity === 'error'), [issues]);
+  const topErrors = useMemo(
+    () =>
+      issues
+        .filter((i) => i.severity === 'error')
+        .slice(0, 3)
+        .map((i) => i.message),
+    [issues],
+  );
+
   return (
     <div className={styles.shell} data-drawer={drawerExpanded ? 'expanded' : 'collapsed'}>
       <div className={styles.toolbar}>
-        <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
+        <Toolbar
+          workflowName={storeName}
+          onResetLayout={positions.reset}
+          onSave={onSave}
+          hasErrors={hasErrors}
+          topErrors={topErrors}
+        />
       </div>
       <div className={styles.library}>
         <NodeLibrary cwd={cwd} />
@@ -79,6 +103,7 @@ export function WorkflowBuilder({
   archonUrl,
   cwd,
   workflowName,
+  onSave,
 }: WorkflowBuilderProps) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const positions = usePositionPersistence(archonUrl, cwd, workflowName);
@@ -89,7 +114,12 @@ export function WorkflowBuilder({
         <ThemeProvider preset={theme}>
           <StudioErrorBoundary>
             <PositionProvider value={positions}>
-              <WorkflowBuilderInner cwd={cwd} workflowName={workflowName} positions={positions} />
+              <WorkflowBuilderInner
+                cwd={cwd}
+                workflowName={workflowName}
+                positions={positions}
+                onSave={onSave}
+              />
             </PositionProvider>
           </StudioErrorBoundary>
         </ThemeProvider>

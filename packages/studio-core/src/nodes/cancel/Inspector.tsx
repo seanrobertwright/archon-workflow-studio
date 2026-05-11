@@ -13,19 +13,21 @@ export const CancelInspector: FC<InspectorProps<CancelNodeData>> = ({
   siblingIds,
 }) => (
   <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-    <Field
-      label="Cancel reason"
-      htmlFor={`cancel-${id}`}
-      hint="Reason string shown when this node terminates the workflow."
-    >
-      <textarea
-        id={`cancel-${id}`}
-        aria-label="Cancel reason"
-        value={data.cancel ?? ''}
-        onChange={(e) => onChange({ cancel: e.target.value })}
-        rows={3}
-        style={textareaStyle}
-      />
-    </Field>
+    <div data-field="cancel">
+      <Field
+        label="Cancel reason"
+        htmlFor={`cancel-${id}`}
+        hint="Reason string shown when this node terminates the workflow."
+      >
+        <textarea
+          id={`cancel-${id}`}
+          aria-label="Cancel reason"
+          value={data.cancel ?? ''}
+          onChange={(e) => onChange({ cancel: e.target.value })}
+          rows={3}
+          style={textareaStyle}
+        />
+      </Field>
+    </div>
   </GeneralTab>
 );

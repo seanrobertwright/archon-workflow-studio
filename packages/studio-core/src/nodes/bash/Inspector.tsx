@@ -16,18 +16,20 @@ export const BashInspector: FC<InspectorProps<BashNodeData>> = ({
   const { extensions } = useWhenContext(id);
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field
-        label="Bash"
-        hint="Shell script body. Runs via the bash runtime. Type $ for upstream node references."
-      >
-        <CmEditor
-          ariaLabel="Bash"
-          value={data.bash ?? ''}
-          onChange={(next) => onChange({ bash: next })}
-          extensions={extensions}
-          minHeight={140}
-        />
-      </Field>
+      <div data-field="bash">
+        <Field
+          label="Bash"
+          hint="Shell script body. Runs via the bash runtime. Type $ for upstream node references."
+        >
+          <CmEditor
+            ariaLabel="Bash"
+            value={data.bash ?? ''}
+            onChange={(next) => onChange({ bash: next })}
+            extensions={extensions}
+            minHeight={140}
+          />
+        </Field>
+      </div>
       <Field
         label="Timeout (ms)"
         htmlFor={`bash-timeout-${id}`}

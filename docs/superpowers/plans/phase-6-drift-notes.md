@@ -664,3 +664,83 @@ bun:test requirement (no implicit cleanup unlike Jest + jsdom).
 **What shipped:** Replaced with `const [drawerExpanded, setDrawerExpanded] = useState(false)` in `WorkflowBuilderInner`. `data-drawer` attribute reads `drawerExpanded ? 'expanded' : 'collapsed'`, preserving the CSS token (`--studio-drawer-h: 240px`) behavior defined in `WorkflowBuilder.module.css`.
 
 **Anticipated by dispatch:** Yes — explicitly called out in the task description.
+
+---
+
+## Drift 6.8.1 — No `'body'` tab; plan's field→tab mapping collapses to `'general'`
+
+**Plan assumed** tab IDs `'general'` and `'body'` and routed:
+- `when` / `atomIndex` → `'general'`
+- `prompt` / `script` / `body` → `'body'`
+
+**Reality:** The real inspector tab set (from `InspectorTabs.tsx` LABELS) is:
+`general | execution | provider | tools | hooks | skills-mcp | advanced`
+
+There is no `'body'` tab. Every body editor (PromptInspector's prompt, BashInspector's bash, ScriptInspector's script, CommandInspector's command, LoopInspector's loop.prompt, ApprovalInspector's approval.message, CancelInspector's cancel) renders inside the variant Inspector which is shown when `active === 'general'`. `WhenSection` also renders inside `GeneralTab` (which is the 'general' case). The plan's `'body'` branch is dead in this codebase.
+
+**What shipped:** `fieldToTab()` always returns `'general'`. This is correct and forward-compatible: the function is retained for the day a tab gains field-level routing from validation.
+
+---
+
+## Drift 6.8.2 — Tab state lifted to NodeInspector (controlled mode added to InspectorTabs)
+
+**Plan assumed** `setActiveTab` was accessible in the same component that calls `useBuilderStore` (similar to how `useState` is top-level). But `setActiveTab` is local state inside `InspectorTabs`, which is a child of `NodeInspector`.
+
+**Options considered:**
+1. Add `focusedIssue` effect inside `InspectorTabs` — reads store directly.
+2. Lift tab state to `NodeInspector` — pass controlled `activeTab` + `onActiveChange` props to `InspectorTabs`.
+
+**What shipped (option 2):** `InspectorTabs` gained optional `activeTab?: InspectorTabId` and `onActiveChange?: (tab: InspectorTabId) => void` props. When both are provided, the component operates in controlled mode (using the caller's state). `NodeInspector` owns the tab state via `useState<InspectorTabId>('general')` and wires the focus-reaction `useEffect` at the same level. The existing uncontrolled path (`initial?` prop → local `useState`) is preserved for any future callers that don't need focus reaction.
+
+---
+
+## Drift 6.8.3 — `Field` does not spread `data-*` props; markers on wrapping divs
+
+**Plan:** "Add `data-field` markers to editable surfaces in inspector tabs."
+
+**Reality (`Field.tsx`):** `Field` accepts only typed props (`label`, `htmlFor`, `hint`, `error`, `children`) and does not spread extra attributes. Adding `data-field` directly to `<Field>` would be a TypeScript error.
+
+**What shipped:** A plain `<div data-field="<fieldname>">` wraps each `<Field>` at the call site in each variant Inspector. This puts the scroll target on the outermost container, which is correct — `scrollIntoView({ block: 'center' })` centers the whole labelled field region, not just the input control.
+
+**Fields marked with `data-field`:**
+
+| Attribute | Component | Validator rule that emits it |
+|---|---|---|
+| `data-field="when"` | `WhenSection` (wrapper div in return JSX) | `content.when.parse` |
+| `data-field="command"` | `CommandInspector` | `structural.required.command` |
+| `data-field="prompt"` | `PromptInspector` | `structural.required.prompt` |
+| `data-field="bash"` | `BashInspector` | `structural.required.bash` |
+| `data-field="script"` | `ScriptInspector` | `structural.required.script` |
+| `data-field="loop.prompt"` | `LoopInspector` | `structural.required.loop.prompt` |
+| `data-field="loop.until"` | `LoopInspector` | `structural.required.loop.until` |
+| `data-field="loop.max_iterations"` | `LoopInspector` | `structural.required.loop.max_iterations` |
+| `data-field="approval.message"` | `ApprovalInspector` | `structural.required.approval.message` |
+| `data-field="cancel"` | `CancelInspector` | `structural.required.cancel` |
+
+Node-level structural issues without a `field` (e.g., `structural.id.empty`, `structural.id.duplicate`, `structural.required.loop`, `structural.required.approval`) have `path.field === undefined`. The effect skips them gracefully — `document.querySelector('[data-field="undefined"]')` returns `null`, `el?.scrollIntoView()` is a no-op.
+
+---
+
+## Drift 6.8.4 — `.flash` CSS added to `tokens.css` (not a new file)
+
+**Plan:** "Add `.flash { ... }` to a shared CSS file."
+
+**Reality:** The only theme CSS file is `packages/studio-core/src/theme/tokens.css`. The test setup stubs all `.css` imports (including `tokens.css`) as `export default {}` via bun's `css-stub` plugin, so no import changes were needed and no tests needed adjustment.
+
+**What shipped:** `.flash` rule appended to `tokens.css` after the last `:root[...]` block. The rule uses `var(--studio-warn, gold)` for the outline color (matching the plan) and a 1-second ease transition.
+
+---
+
+## Drift 6.8.5 — `Toolbar.spec.tsx` requires `GlobalRegistrator` from setup.ts (already preloaded)
+
+**Plan provided spec:** imported `GlobalRegistrator` explicitly in the test file.
+
+**Reality:** The bun test config (`bunfig.toml`) preloads `./tests/setup.ts` which registers `GlobalRegistrator` before any test runs. Importing and calling `GlobalRegistrator.register()` again inside the spec is harmless (the guard `if (!GlobalRegistrator.isRegistered)` prevents double-registration) but redundant. The import was retained to match the `ValidationPanel.spec.tsx` pattern, making the file self-describing.
+
+---
+
+## Drift 6.8.6 — `onSave` is not wired in the standalone dev app (by design)
+
+**Plan:** "The standalone app currently doesn't pass [onSave], so Save button stays off there for now — that's fine."
+
+**Reality:** The standalone entry point (`packages/studio-app/src/App.tsx` or similar) was not modified. `WorkflowBuilder` renders without `onSave`, so the Save button does not appear in the standalone dev UI. This is intentional per the plan; the prop chain (`WorkflowBuilder.onSave → WorkflowBuilderInner.onSave → Toolbar.onSave`) is in place for callers that DO provide `onSave` (e.g., the embedded Archon integration or future E2E tests).

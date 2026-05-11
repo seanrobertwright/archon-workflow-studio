@@ -61,56 +61,58 @@ export function WhenSection({ value, upstreamIds, outputFormatLookup, onChange }
       : "Switch to Raw for ops or value types the visual builder doesn't expose.";
 
   return (
-    <Field label="When" hint={hint}>
-      <div style={toolbarStyle}>
-        <button
-          type="button"
-          aria-pressed={mode === 'visual'}
-          aria-label="Visual"
-          disabled={!visualAvailable}
-          onClick={() => setMode('visual')}
-          style={toggleStyle(mode === 'visual', !visualAvailable)}
-        >
-          Visual
-        </button>
-        <button
-          type="button"
-          aria-pressed={mode === 'raw'}
-          aria-label="Raw"
-          onClick={() => setMode('raw')}
-          style={toggleStyle(mode === 'raw', false)}
-        >
-          Raw
-        </button>
-      </div>
-
-      {!visualAvailable && (
-        <div role="status" style={bannerStyle}>
-          {derived.parseError
-            ? `Can't parse this expression: ${derived.parseError}. Edit raw, then re-try visual.`
-            : 'Visual builder needs flat OR-of-ANDs. Edit raw, or simplify the expression.'}
+    <div data-field="when">
+      <Field label="When" hint={hint}>
+        <div style={toolbarStyle}>
+          <button
+            type="button"
+            aria-pressed={mode === 'visual'}
+            aria-label="Visual"
+            disabled={!visualAvailable}
+            onClick={() => setMode('visual')}
+            style={toggleStyle(mode === 'visual', !visualAvailable)}
+          >
+            Visual
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'raw'}
+            aria-label="Raw"
+            onClick={() => setMode('raw')}
+            style={toggleStyle(mode === 'raw', false)}
+          >
+            Raw
+          </button>
         </div>
-      )}
 
-      {mode === 'visual' && derived.parsedDnf && (
-        <WhenBuilder
-          dnf={derived.parsedDnf}
-          upstreamIds={upstreamIds}
-          outputFormatLookup={outputFormatLookup}
-          onChange={(nextDnf) => onChange(formatDnf(nextDnf))}
-        />
-      )}
+        {!visualAvailable && (
+          <div role="status" style={bannerStyle}>
+            {derived.parseError
+              ? `Can't parse this expression: ${derived.parseError}. Edit raw, then re-try visual.`
+              : 'Visual builder needs flat OR-of-ANDs. Edit raw, or simplify the expression.'}
+          </div>
+        )}
 
-      {mode === 'raw' && (
-        <CmEditor
-          ariaLabel="When (raw)"
-          value={value ?? ''}
-          onChange={(next) => onChange(next === '' ? null : next)}
-          extensions={extensions}
-          minHeight={48}
-        />
-      )}
-    </Field>
+        {mode === 'visual' && derived.parsedDnf && (
+          <WhenBuilder
+            dnf={derived.parsedDnf}
+            upstreamIds={upstreamIds}
+            outputFormatLookup={outputFormatLookup}
+            onChange={(nextDnf) => onChange(formatDnf(nextDnf))}
+          />
+        )}
+
+        {mode === 'raw' && (
+          <CmEditor
+            ariaLabel="When (raw)"
+            value={value ?? ''}
+            onChange={(next) => onChange(next === '' ? null : next)}
+            extensions={extensions}
+            minHeight={48}
+          />
+        )}
+      </Field>
+    </div>
   );
 }
 

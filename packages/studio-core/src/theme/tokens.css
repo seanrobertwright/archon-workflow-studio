@@ -80,3 +80,9 @@
   --node-approval: var(--chart-3, #fb923c);
   --node-cancel: var(--destructive, #ef4444);
 }
+
+/* Validation focus flash — applied transiently via JS after scrollIntoView. */
+.flash {
+  outline: 2px solid var(--studio-warn, gold);
+  transition: outline-color 1s ease;
+}

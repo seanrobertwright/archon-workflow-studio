@@ -24,46 +24,52 @@ export const LoopInspector: FC<InspectorProps<LoopNodeData>> = ({
 
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field label="Prompt" hint="Body executed each iteration. Type $ for upstream references.">
-        <CmEditor
-          ariaLabel="Prompt"
-          value={loop.prompt ?? ''}
-          onChange={(next) => patchLoop({ prompt: next })}
-          extensions={extensions}
-          minHeight={120}
-        />
-      </Field>
-      <Field
-        label="Until (signal)"
-        htmlFor={`loop-until-${id}`}
-        hint="String emitted by the AI when complete (e.g. COMPLETE)."
-      >
-        <input
-          id={`loop-until-${id}`}
-          aria-label="Until"
-          value={loop.until ?? ''}
-          onChange={(e) => patchLoop({ until: e.target.value })}
-          style={inputStyle}
-        />
-      </Field>
-      <Field
-        label="Max iterations"
-        htmlFor={`loop-max-${id}`}
-        hint="Hard cap; exceeding fails the node."
-      >
-        <input
-          id={`loop-max-${id}`}
-          aria-label="Max iterations"
-          type="number"
-          min={1}
-          value={loop.max_iterations ?? 10}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            if (Number.isFinite(v) && v > 0) patchLoop({ max_iterations: v });
-          }}
-          style={inputStyle}
-        />
-      </Field>
+      <div data-field="loop.prompt">
+        <Field label="Prompt" hint="Body executed each iteration. Type $ for upstream references.">
+          <CmEditor
+            ariaLabel="Prompt"
+            value={loop.prompt ?? ''}
+            onChange={(next) => patchLoop({ prompt: next })}
+            extensions={extensions}
+            minHeight={120}
+          />
+        </Field>
+      </div>
+      <div data-field="loop.until">
+        <Field
+          label="Until (signal)"
+          htmlFor={`loop-until-${id}`}
+          hint="String emitted by the AI when complete (e.g. COMPLETE)."
+        >
+          <input
+            id={`loop-until-${id}`}
+            aria-label="Until"
+            value={loop.until ?? ''}
+            onChange={(e) => patchLoop({ until: e.target.value })}
+            style={inputStyle}
+          />
+        </Field>
+      </div>
+      <div data-field="loop.max_iterations">
+        <Field
+          label="Max iterations"
+          htmlFor={`loop-max-${id}`}
+          hint="Hard cap; exceeding fails the node."
+        >
+          <input
+            id={`loop-max-${id}`}
+            aria-label="Max iterations"
+            type="number"
+            min={1}
+            value={loop.max_iterations ?? 10}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v) && v > 0) patchLoop({ max_iterations: v });
+            }}
+            style={inputStyle}
+          />
+        </Field>
+      </div>
       <Field
         label="Fresh context"
         htmlFor={`loop-fresh-${id}`}

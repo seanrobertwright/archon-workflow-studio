@@ -15,15 +15,17 @@ export const PromptInspector: FC<InspectorProps<PromptNodeData>> = ({
   const { extensions } = useWhenContext(id);
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field label="Prompt" hint="Inline prompt body. Type $ for upstream node references.">
-        <CmEditor
-          ariaLabel="Prompt"
-          value={data.prompt ?? ''}
-          onChange={(next) => onChange({ prompt: next })}
-          extensions={extensions}
-          minHeight={140}
-        />
-      </Field>
+      <div data-field="prompt">
+        <Field label="Prompt" hint="Inline prompt body. Type $ for upstream node references.">
+          <CmEditor
+            ariaLabel="Prompt"
+            value={data.prompt ?? ''}
+            onChange={(next) => onChange({ prompt: next })}
+            extensions={extensions}
+            minHeight={140}
+          />
+        </Field>
+      </div>
     </GeneralTab>
   );
 };

@@ -16,18 +16,20 @@ export const ScriptInspector: FC<InspectorProps<ScriptNodeData>> = ({
   const { extensions } = useWhenContext(id);
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field
-        label="Script"
-        hint="Inline source. TypeScript runs via Bun, Python via uv. Type $ for upstream references."
-      >
-        <CmEditor
-          ariaLabel="Script"
-          value={data.script ?? ''}
-          onChange={(next) => onChange({ script: next })}
-          extensions={extensions}
-          minHeight={140}
-        />
-      </Field>
+      <div data-field="script">
+        <Field
+          label="Script"
+          hint="Inline source. TypeScript runs via Bun, Python via uv. Type $ for upstream references."
+        >
+          <CmEditor
+            ariaLabel="Script"
+            value={data.script ?? ''}
+            onChange={(next) => onChange({ script: next })}
+            extensions={extensions}
+            minHeight={140}
+          />
+        </Field>
+      </div>
       <Field label="Runtime" htmlFor={`script-runtime-${id}`}>
         <select
           id={`script-runtime-${id}`}
