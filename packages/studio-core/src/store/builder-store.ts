@@ -135,6 +135,11 @@ export interface BuilderState {
   connect: (source: string, target: string) => void;
   disconnect: (source: string, target: string) => void;
   renameNode: (oldId: string, newId: string) => void;
+
+  /** Restore nodes + positions from an undo snapshot. */
+  applySnapshot: (snap: UndoSnapshot) => void;
+  /** Alias for applySnapshot — same semantics, symmetric naming for redo. */
+  revertSnapshot: (snap: UndoSnapshot) => void;
 }
 
 export const useBuilderStore = create<BuilderState>((set, get) => {
@@ -411,6 +416,11 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
       };
       set({ nodes: state.nodes.map(renameRefs) });
     },
+
+    applySnapshot: (snap) => set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
+
+    revertSnapshot: (snap) =>
+      set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
   }; // end return
 }); // end create
 

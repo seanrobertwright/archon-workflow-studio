@@ -26,6 +26,8 @@ export type {
   IssuePath,
 } from './store/builder-store';
 export { useThemeStore } from './store/theme-store';
+export { useUndoStore, withUndo, resetCoalesceState } from './store/undo-store';
+export type { UndoSnapshot } from './store/undo-store';
 export { ThemePicker } from './components/ThemePicker';
 
 export { useValidation } from './validation/useValidation';

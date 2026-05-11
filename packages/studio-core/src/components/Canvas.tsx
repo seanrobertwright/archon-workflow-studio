@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 import './Canvas.css';
 
 import { useBuilderStore } from '../store/builder-store';
+import { withUndo } from '../store/undo-store';
 import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
 import { layoutWithDagre } from '../hooks/useDagre';
 import { usePositionContext } from '../hooks/PositionContext';
@@ -42,6 +43,7 @@ export function Canvas() {
   const primarySelectionId = useBuilderStore((s) => s.primarySelectionId);
   const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
   const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
+  const setNodePosition = useBuilderStore((s) => s.setNodePosition);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -195,6 +197,15 @@ export function Canvas() {
         onPaneClick={() => clearSelection()}
         onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
+        onNodeDragStop={(_event, node) => {
+          withUndo('drag node', {
+            label: 'drag node',
+            workflow: useBuilderStore.getState().workflow ?? null,
+            nodes: [...useBuilderStore.getState().nodes],
+            positions: { ...useBuilderStore.getState().positions },
+          });
+          setNodePosition(node.id, node.position.x, node.position.y);
+        }}
         fitView
         proOptions={{ hideAttribution: true }}
       >
