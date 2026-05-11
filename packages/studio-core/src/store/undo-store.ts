@@ -14,6 +14,8 @@ interface UndoState {
   undo: () => UndoSnapshot | null;
   redo: () => UndoSnapshot | null;
   clear: () => void;
+  nextUndoLabel: () => string | null;
+  nextRedoLabel: () => string | null;
 }
 
 const MAX_STACK = 50;
@@ -41,6 +43,14 @@ export const useUndoStore = create<UndoState>((set, get) => ({
     return head;
   },
   clear: () => set({ past: [], future: [] }),
+  nextUndoLabel: () => {
+    const { past } = get();
+    return past.length > 0 ? past[past.length - 1].label : null;
+  },
+  nextRedoLabel: () => {
+    const { future } = get();
+    return future.length > 0 ? future[0].label : null;
+  },
 }));
 
 // Coalesce window: same label within 400ms → don't push again

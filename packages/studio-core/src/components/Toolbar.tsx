@@ -1,5 +1,6 @@
 import { ThemePicker } from './ThemePicker';
 import { useBuilderStore } from '../store/builder-store';
+import { useUndoStore } from '../store/undo-store';
 
 export interface ToolbarProps {
   workflowName: string;
@@ -34,6 +35,10 @@ export function Toolbar({
   const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
   const gridSnap = useBuilderStore((s) => s.gridSnap);
   const toggleGridSnap = useBuilderStore((s) => s.toggleGridSnap);
+  const applyUndo = useBuilderStore((s) => s.applyUndo);
+  const applyRedo = useBuilderStore((s) => s.applyRedo);
+  const undoLabel = useUndoStore((s) => s.nextUndoLabel());
+  const redoLabel = useUndoStore((s) => s.nextRedoLabel());
   const hasSelection = selectedNodeIds.length >= 2;
 
   return (
@@ -48,6 +53,38 @@ export function Toolbar({
       }}
     >
       <strong style={{ flex: 1 }}>{workflowName}</strong>
+      <button
+        type="button"
+        aria-label={undoLabel ? `Undo: ${undoLabel}` : 'Undo'}
+        disabled={!undoLabel}
+        onClick={applyUndo}
+        style={{
+          background: 'transparent',
+          color: 'var(--studio-fg)',
+          border: '1px solid var(--studio-muted)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '4px 8px',
+          cursor: undoLabel ? 'pointer' : 'not-allowed',
+        }}
+      >
+        ↶
+      </button>
+      <button
+        type="button"
+        aria-label={redoLabel ? `Redo: ${redoLabel}` : 'Redo'}
+        disabled={!redoLabel}
+        onClick={applyRedo}
+        style={{
+          background: 'transparent',
+          color: 'var(--studio-fg)',
+          border: '1px solid var(--studio-muted)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '4px 8px',
+          cursor: redoLabel ? 'pointer' : 'not-allowed',
+        }}
+      >
+        ↷
+      </button>
       <button
         type="button"
         onClick={onResetLayout}

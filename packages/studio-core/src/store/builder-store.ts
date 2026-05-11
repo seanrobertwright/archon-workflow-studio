@@ -161,6 +161,10 @@ export interface BuilderState {
   applySnapshot: (snap: UndoSnapshot) => void;
   /** Alias for applySnapshot — same semantics, symmetric naming for redo. */
   revertSnapshot: (snap: UndoSnapshot) => void;
+  /** Pop the top of the undo stack and apply it. No-op when stack is empty. */
+  applyUndo: () => void;
+  /** Pop the top of the redo stack and apply it. No-op when stack is empty. */
+  applyRedo: () => void;
 
   /** Copy selected nodes to in-memory clipboard and (best-effort) navigator.clipboard. */
   copySelection: () => Promise<void>;
@@ -530,6 +534,16 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
 
     revertSnapshot: (snap) =>
       set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
+
+    applyUndo: () => {
+      const snap = useUndoStore.getState().undo();
+      if (snap) get().applySnapshot(snap);
+    },
+
+    applyRedo: () => {
+      const snap = useUndoStore.getState().redo();
+      if (snap) get().applySnapshot(snap);
+    },
 
     alignSelection: (direction) => {
       const { nodes, selectedNodeIds, positions, workflow } = get();

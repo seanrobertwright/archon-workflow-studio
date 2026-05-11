@@ -71,6 +71,8 @@ function WorkflowBuilderInner({
   const alignSelection = useBuilderStore((s) => s.alignSelection);
   const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
   const toggleGridSnap = useBuilderStore((s) => s.toggleGridSnap);
+  const applyUndo = useBuilderStore((s) => s.applyUndo);
+  const applyRedo = useBuilderStore((s) => s.applyRedo);
 
   const hotkeyOptions = { enableOnFormTags: false, enableOnContentEditable: false } as const;
 
@@ -160,6 +162,22 @@ function WorkflowBuilderInner({
     (e) => {
       e.preventDefault();
       toggleGridSnap();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.undo,
+    (e) => {
+      e.preventDefault();
+      applyUndo();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.redo,
+    (e) => {
+      e.preventDefault();
+      applyRedo();
     },
     hotkeyOptions,
   );
