@@ -5,6 +5,7 @@ import type { VariantId } from '../nodes/registry';
 import { makeUniqueId } from '../nodes/shared/makeUniqueId';
 import { pickBaseFields } from '../nodes/shared/pickBaseFields';
 import { mergePatch } from './mergePatch';
+import { serializeYaml } from '../exporter/serializeYaml';
 
 /**
  * Base fields whose semantics are AI-inference-specific (provider routing,
@@ -67,11 +68,19 @@ export interface BuilderState {
   selectedNodeId: string | null;
   /** The validation issue path currently focused in the panel. Drives inspector tab routing. */
   focusedIssue: IssuePath | null;
+  /** Id of the node currently hovered on the canvas. Null when no node is hovered. */
+  hoveredNodeId: string | null;
+  /** Whether the YAML preview drawer is open. */
+  isYamlPreviewOpen: boolean;
+  /** Serialized YAML captured at last loadWorkflow call. Used to detect unsaved changes. */
+  baselineYaml: string | null;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
   setSelectedNodeId: (id: string | null) => void;
   setFocusedIssue: (path: IssuePath | null) => void;
+  setHoveredNodeId: (id: string | null) => void;
+  setYamlPreviewOpen: (open: boolean) => void;
 
   setWorkflowName: (name: string) => void;
   setWorkflowDescription: (description: string) => void;
@@ -121,10 +130,25 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   nodes: [],
   selectedNodeId: null,
   focusedIssue: null,
+  hoveredNodeId: null,
+  isYamlPreviewOpen: false,
+  baselineYaml: null,
 
-  loadWorkflow: ({ meta, nodes }) => set({ workflow: meta, nodes }),
-  clearWorkflow: () => set({ workflow: null, nodes: [], selectedNodeId: null, focusedIssue: null }),
+  loadWorkflow: (input) => {
+    const { yaml: baseline } = serializeYaml(input);
+    set({ workflow: input.meta, nodes: input.nodes, baselineYaml: baseline });
+  },
+  clearWorkflow: () =>
+    set({
+      workflow: null,
+      nodes: [],
+      selectedNodeId: null,
+      focusedIssue: null,
+      baselineYaml: null,
+    }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
+  setYamlPreviewOpen: (open) => set({ isYamlPreviewOpen: open }),
   // Reference-equality guard: prevents spurious notifications when the panel
   // re-clicks the same row (the same path reference) — Zustand would otherwise
   // notify on every set() even with an identical payload.
