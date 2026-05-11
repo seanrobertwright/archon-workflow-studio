@@ -46,3 +46,7 @@ export {
   distributeH,
   distributeV,
 } from './alignment';
+
+export { computeGuides } from './smart-guides';
+export type { Guide } from './smart-guides';
+export { SmartGuidesLayer } from './components/SmartGuidesLayer';

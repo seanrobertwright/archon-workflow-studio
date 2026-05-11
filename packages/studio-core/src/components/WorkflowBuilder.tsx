@@ -70,6 +70,7 @@ function WorkflowBuilderInner({
   const clearSelection = useBuilderStore((s) => s.clearSelection);
   const alignSelection = useBuilderStore((s) => s.alignSelection);
   const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
+  const toggleGridSnap = useBuilderStore((s) => s.toggleGridSnap);
 
   const hotkeyOptions = { enableOnFormTags: false, enableOnContentEditable: false } as const;
 
@@ -151,6 +152,14 @@ function WorkflowBuilderInner({
     (e) => {
       e.preventDefault();
       autoArrangeSelection();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.toggleGridSnap,
+    (e) => {
+      e.preventDefault();
+      toggleGridSnap();
     },
     hotkeyOptions,
   );

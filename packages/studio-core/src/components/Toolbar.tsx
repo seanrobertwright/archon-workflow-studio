@@ -32,6 +32,8 @@ export function Toolbar({
   const alignSelection = useBuilderStore((s) => s.alignSelection);
   const distributeSelection = useBuilderStore((s) => s.distributeSelection);
   const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
+  const gridSnap = useBuilderStore((s) => s.gridSnap);
+  const toggleGridSnap = useBuilderStore((s) => s.toggleGridSnap);
   const hasSelection = selectedNodeIds.length >= 2;
 
   return (
@@ -190,6 +192,15 @@ export function Toolbar({
           YAML
         </button>
       ) : null}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={gridSnap}
+          onChange={toggleGridSnap}
+          aria-label="Snap to grid"
+        />
+        Grid
+      </label>
       {showThemePicker ? <ThemePicker /> : null}
       {onSave ? (
         <button
