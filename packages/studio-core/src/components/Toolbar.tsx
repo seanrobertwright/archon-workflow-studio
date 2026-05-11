@@ -1,3 +1,5 @@
+import { ThemePicker } from './ThemePicker';
+
 export interface ToolbarProps {
   workflowName: string;
   onResetLayout: () => void;
@@ -11,6 +13,8 @@ export interface ToolbarProps {
   isYamlPreviewOpen?: boolean;
   /** When provided, renders the YAML toggle button. */
   onToggleYamlPreview?: () => void;
+  /** When false, hides the theme picker. Defaults to true. */
+  showThemePicker?: boolean;
 }
 
 export function Toolbar({
@@ -21,6 +25,7 @@ export function Toolbar({
   topErrors = [],
   isYamlPreviewOpen,
   onToggleYamlPreview,
+  showThemePicker = true,
 }: ToolbarProps) {
   return (
     <header
@@ -65,6 +70,7 @@ export function Toolbar({
           YAML
         </button>
       ) : null}
+      {showThemePicker ? <ThemePicker /> : null}
       {onSave ? (
         <button
           type="button"

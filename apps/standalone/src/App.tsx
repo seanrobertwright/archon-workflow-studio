@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { WorkflowBuilder, fromWorkflowDefinition, useBuilderStore } from '@archon-studio/core';
+import {
+  WorkflowBuilder,
+  fromWorkflowDefinition,
+  useBuilderStore,
+  useThemeStore,
+} from '@archon-studio/core';
 import { StubArchonApiClient } from '@archon-studio/api-archon';
 // Vite bundles YAML files as raw strings via `?raw`. The fixtures package's
 // own loader uses `node:fs` and can't be imported in the browser; we resolve
@@ -23,6 +28,10 @@ const client = new StubArchonApiClient({
 
 export function App() {
   const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    useThemeStore.getState().hydrate();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +61,6 @@ export function App() {
   return (
     <WorkflowBuilder
       client={client}
-      theme="archon-dark"
       archonUrl="__dev__"
       cwd="__dev__"
       workflowName={FIXTURE_NAME}

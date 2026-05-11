@@ -20,7 +20,8 @@ import styles from './WorkflowBuilder.module.css';
 
 export interface WorkflowBuilderProps {
   client: WorkflowApiClient;
-  theme: ThemePreset;
+  /** Optional theme preset override. When omitted, the value from useThemeStore is used. */
+  theme?: ThemePreset;
   /** Used to key persisted positions. In dev/standalone Phase 2, pass `__dev__`. */
   archonUrl: string;
   cwd: string;
@@ -32,6 +33,8 @@ export interface WorkflowBuilderProps {
    * there are active validation errors.
    */
   onSave?: () => void;
+  /** When false, hides the theme picker in the toolbar. Defaults to true. */
+  showThemePicker?: boolean;
 }
 
 /**
@@ -43,11 +46,13 @@ function WorkflowBuilderInner({
   workflowName,
   positions,
   onSave,
+  showThemePicker,
 }: {
   cwd: string;
   workflowName: string;
   positions: ReturnType<typeof usePositionPersistence>;
   onSave?: () => void;
+  showThemePicker?: boolean;
 }) {
   const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
   const isYamlOpen = useBuilderStore((s) => s.isYamlPreviewOpen);
@@ -76,6 +81,7 @@ function WorkflowBuilderInner({
           topErrors={topErrors}
           isYamlPreviewOpen={isYamlOpen}
           onToggleYamlPreview={() => setYamlOpen(!isYamlOpen)}
+          showThemePicker={showThemePicker}
         />
       </div>
       <div className={styles.library}>
@@ -109,6 +115,7 @@ export function WorkflowBuilder({
   cwd,
   workflowName,
   onSave,
+  showThemePicker,
 }: WorkflowBuilderProps) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const positions = usePositionPersistence(archonUrl, cwd, workflowName);
@@ -124,6 +131,7 @@ export function WorkflowBuilder({
                 workflowName={workflowName}
                 positions={positions}
                 onSave={onSave}
+                showThemePicker={showThemePicker}
               />
             </PositionProvider>
           </StudioErrorBoundary>

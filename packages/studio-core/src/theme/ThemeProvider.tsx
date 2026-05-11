@@ -1,13 +1,13 @@
 import { useEffect, type ReactNode } from 'react';
+import { useThemeStore } from '../store/theme-store';
 
 export type ThemePreset = 'archon-dark' | 'light' | 'high-contrast' | 'inherit';
 
-export function ThemeProvider({ preset, children }: { preset: ThemePreset; children: ReactNode }) {
+export function ThemeProvider({ preset, children }: { preset?: ThemePreset; children: ReactNode }) {
+  const storePreset = useThemeStore((s) => s.preset);
+  const effective = preset ?? storePreset;
   useEffect(() => {
-    document.documentElement.dataset.studioTheme = preset;
-    return () => {
-      delete document.documentElement.dataset.studioTheme;
-    };
-  }, [preset]);
+    document.documentElement.dataset.studioTheme = effective;
+  }, [effective]);
   return <>{children}</>;
 }

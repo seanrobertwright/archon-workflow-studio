@@ -25,6 +25,8 @@ export type {
   LoadWorkflowInput,
   IssuePath,
 } from './store/builder-store';
+export { useThemeStore } from './store/theme-store';
+export { ThemePicker } from './components/ThemePicker';
 
 export { useValidation } from './validation/useValidation';
 export type { UseValidationResult } from './validation/useValidation';
