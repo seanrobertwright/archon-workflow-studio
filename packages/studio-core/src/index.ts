@@ -15,6 +15,7 @@ export { VARIANT_IDS, type VariantId } from './nodes/registry';
 
 export { WorkflowBuilder, type WorkflowBuilderProps } from './components/WorkflowBuilder';
 export { NodeInspector } from './components/inspector/NodeInspector';
+export { VariantPicker } from './components/inspector/general/VariantPicker';
 
 export { fromWorkflowDefinition } from './exporter/fromWorkflowDefinition';
 export { toWorkflowDefinition } from './exporter/toWorkflowDefinition';

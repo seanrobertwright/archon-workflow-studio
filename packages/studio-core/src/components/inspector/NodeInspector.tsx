@@ -4,6 +4,7 @@ import { defaultRegistry } from '../../nodes/default-registry';
 import { tabsForVariant, type InspectorProps, type InspectorTabId } from '../../nodes/shared/types';
 import { useInspectorPatch } from '../../hooks/useInspectorPatch';
 import { RenameField } from './shared';
+import { VariantPicker } from './general/VariantPicker';
 import { InspectorTabs } from './InspectorTabs';
 import { ExecutionTab } from './tabs/ExecutionTab';
 import { ProviderTab } from './tabs/ProviderTab';
@@ -103,7 +104,12 @@ export function NodeInspector() {
           };
           switch (active) {
             case 'general':
-              return <General {...(generalProps as InspectorProps<never>)} />;
+              return (
+                <>
+                  <VariantPicker />
+                  <General {...(generalProps as InspectorProps<never>)} />
+                </>
+              );
             case 'execution':
               return (
                 <ExecutionTab
