@@ -112,4 +112,21 @@ describe('WorkflowBuilder', () => {
     // inspector swapped from the empty state to the populated state.
     expect(screen.getByLabelText(/node id/i)).toBeDefined();
   });
+
+  it('renders a bottom drawer slot', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [{ id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} }],
+    });
+    const { container } = render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    expect(container.querySelector('[data-testid="validation-drawer"]')).not.toBeNull();
+  });
 });

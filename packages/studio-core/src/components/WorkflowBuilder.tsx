@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { ApiClientProvider } from '../api/ApiClientProvider';
 import { ThemeProvider, type ThemePreset } from '../theme/ThemeProvider';
@@ -35,6 +35,7 @@ export function WorkflowBuilder({
   const queryClient = useMemo(() => new QueryClient(), []);
   const positions = usePositionPersistence(archonUrl, cwd, workflowName);
   const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
+  const [drawerState] = useState<'collapsed' | 'expanded'>('collapsed');
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -42,7 +43,7 @@ export function WorkflowBuilder({
         <ThemeProvider preset={theme}>
           <StudioErrorBoundary>
             <PositionProvider value={positions}>
-              <div className={styles.shell}>
+              <div className={styles.shell} data-drawer={drawerState}>
                 <div className={styles.toolbar}>
                   <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
                 </div>
@@ -57,6 +58,7 @@ export function WorkflowBuilder({
                 <div className={styles.inspector}>
                   <NodeInspector />
                 </div>
+                <section className={styles.drawer} data-testid="validation-drawer" />
               </div>
             </PositionProvider>
           </StudioErrorBoundary>
