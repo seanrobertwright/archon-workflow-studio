@@ -30,7 +30,7 @@ export function GeneralTab({ base, siblingIds, onChange, children }: Props) {
 
   // Upstream-aware autocomplete context is sourced from the store via the
   // hook, so WhenSection reflects the current workflow without prop drilling.
-  const selectedId = useBuilderStore((s) => s.selectedNodeId) ?? '';
+  const selectedId = useBuilderStore((s) => s.primarySelectionId) ?? '';
   const { upstreamIds, outputFormatLookup } = useWhenContext(selectedId);
 
   return (

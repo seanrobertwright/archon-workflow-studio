@@ -107,13 +107,13 @@ export function useValidation(): UseValidationResult {
     };
   }, []);
 
-  // focusIssue: push selectedNodeId + focusedIssue into the store.
+  // focusIssue: push selection + focusedIssue into the store.
   // Wrapped in useCallback with stable deps so downstream memoisation works.
   const focusIssue = useCallback(
     (issue: Issue) => {
-      const { setSelectedNodeId, setFocusedIssue } = useBuilderStore.getState();
+      const { setSelection, setFocusedIssue } = useBuilderStore.getState();
       if (issue.path.nodeId !== undefined) {
-        setSelectedNodeId(issue.path.nodeId);
+        setSelection([issue.path.nodeId]);
       }
       setFocusedIssue(issue.path);
     },

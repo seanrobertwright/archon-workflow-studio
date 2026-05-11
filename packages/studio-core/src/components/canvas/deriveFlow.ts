@@ -12,6 +12,7 @@ export interface DeriveFlowResult {
 export function deriveFlow(
   storeNodes: readonly BuilderNode[],
   positions: ReadonlyMap<string, { x: number; y: number }>,
+  selectedNodeIds: ReadonlySet<string> = new Set(),
 ): DeriveFlowResult {
   const knownIds = new Set(storeNodes.map((n) => n.id));
 
@@ -19,6 +20,7 @@ export function deriveFlow(
     id: n.id,
     type: n.variant,
     position: positions.get(n.id) ?? { x: 0, y: 0 },
+    selected: selectedNodeIds.has(n.id),
     data: { storeId: n.id, node: n },
   }));
 

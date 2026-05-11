@@ -32,7 +32,7 @@ function fieldToTab(_field: string | undefined): InspectorTabId {
 }
 
 export function NodeInspector() {
-  const selectedId = useBuilderStore((s) => s.selectedNodeId);
+  const selectedId = useBuilderStore((s) => s.primarySelectionId);
   const nodes = useBuilderStore((s) => s.nodes);
   const focused = useBuilderStore((s) => s.focusedIssue);
 

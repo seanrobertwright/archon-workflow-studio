@@ -107,7 +107,7 @@ describe('WorkflowBuilder', () => {
       />,
     );
     act(() => {
-      useBuilderStore.getState().setSelectedNodeId('only');
+      useBuilderStore.getState().setSelection(['only']);
     });
     // RenameField renders a labelled input "Node ID"; presence proves the
     // inspector swapped from the empty state to the populated state.

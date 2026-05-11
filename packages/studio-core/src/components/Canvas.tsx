@@ -37,8 +37,10 @@ export function Canvas() {
   const disconnect = useBuilderStore((s) => s.disconnect);
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
-  const setSelectedNodeId = useBuilderStore((s) => s.setSelectedNodeId);
-  const selectedNodeId = useBuilderStore((s) => s.selectedNodeId);
+  const setSelection = useBuilderStore((s) => s.setSelection);
+  const clearSelection = useBuilderStore((s) => s.clearSelection);
+  const primarySelectionId = useBuilderStore((s) => s.primarySelectionId);
+  const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
   const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
@@ -57,9 +59,10 @@ export function Canvas() {
   // Derive RF nodes/edges from the store. `deriveFlow` returns {x:0,y:0} for
   // any node missing from the persistence map; we overlay seeded/persisted
   // positions when rendering below.
+  const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const { rfNodes: derivedNodes, rfEdges } = useMemo(
-    () => deriveFlow(storeNodes, positions.positions),
-    [storeNodes, positions.positions],
+    () => deriveFlow(storeNodes, positions.positions, selectedNodeIdsSet),
+    [storeNodes, positions.positions, selectedNodeIdsSet],
   );
 
   // Local in-flight node array for React Flow. We hydrate it from `derivedNodes`
@@ -127,30 +130,20 @@ export function Canvas() {
     [persistOnNodesChange],
   );
 
-  // Sync store-driven selection (e.g., from ValidationPanel row click) into
-  // ReactFlow's per-node `selected` flag AND pan the node into view. Without
-  // this, clicking a panel row updates the inspector but the canvas gives no
-  // visual feedback — the node may even be offscreen.
+  // Pan the primary selection into view when selection changes programmatically
+  // (e.g., from ValidationPanel row click). The `selected` flag on rfNodes is
+  // already driven by deriveFlow + the rehydrate effect above; no need to
+  // re-apply it here.
   useEffect(() => {
-    setRfNodes((prev) => {
-      let changed = false;
-      const next = prev.map((n) => {
-        const shouldBe = n.id === selectedNodeId;
-        if (!!n.selected === shouldBe) return n;
-        changed = true;
-        return { ...n, selected: shouldBe };
-      });
-      return changed ? next : prev;
-    });
-    if (selectedNodeId) {
-      const node = reactFlow.getNode(selectedNodeId);
+    if (primarySelectionId) {
+      const node = reactFlow.getNode(primarySelectionId);
       if (node) {
         const cx = node.position.x + (node.measured?.width ?? 150) / 2;
         const cy = node.position.y + (node.measured?.height ?? 40) / 2;
         reactFlow.setCenter(cx, cy, { duration: 300, zoom: reactFlow.getZoom() });
       }
     }
-  }, [selectedNodeId, reactFlow]);
+  }, [primarySelectionId, reactFlow]);
 
   const onConnect = useMemo(() => makeOnConnect(connect), [connect]);
   const onEdgesDelete = useMemo(() => makeOnEdgesDelete(disconnect), [disconnect]);
@@ -198,8 +191,8 @@ export function Canvas() {
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete}
         onNodesDelete={onNodesDelete}
-        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-        onPaneClick={() => setSelectedNodeId(null)}
+        onNodeClick={(_, node) => setSelection([node.id])}
+        onPaneClick={() => clearSelection()}
         onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView

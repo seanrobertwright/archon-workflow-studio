@@ -33,7 +33,7 @@ const seedCommandNodeWithAi = () => {
       },
     ],
   });
-  useBuilderStore.getState().setSelectedNodeId('n1');
+  useBuilderStore.getState().setSelection(['n1']);
 };
 
 describe('variant migration via convertVariant', () => {

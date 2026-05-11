@@ -64,8 +64,10 @@ export interface IssuePath {
 export interface BuilderState {
   workflow: WorkflowMeta | null;
   nodes: BuilderNode[];
-  /** Currently-inspected node id. Driven by Canvas selection (wired in Task 60). */
-  selectedNodeId: string | null;
+  /** All currently-selected node ids. Driven by Canvas onSelectionChange. */
+  selectedNodeIds: string[];
+  /** The last id added to the selection — used by single-node consumers (Inspector, YAML preview). */
+  primarySelectionId: string | null;
   /** The validation issue path currently focused in the panel. Drives inspector tab routing. */
   focusedIssue: IssuePath | null;
   /** Id of the node currently hovered on the canvas. Null when no node is hovered. */
@@ -77,7 +79,12 @@ export interface BuilderState {
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
-  setSelectedNodeId: (id: string | null) => void;
+  setSelection: (ids: string[]) => void;
+  addToSelection: (id: string) => void;
+  removeFromSelection: (id: string) => void;
+  clearSelection: () => void;
+  selectAll: () => void;
+  removeSelected: () => void;
   setFocusedIssue: (path: IssuePath | null) => void;
   setHoveredNodeId: (id: string | null) => void;
   setYamlPreviewOpen: (open: boolean) => void;
@@ -128,7 +135,8 @@ export interface BuilderState {
 export const useBuilderStore = create<BuilderState>((set, get) => ({
   workflow: null,
   nodes: [],
-  selectedNodeId: null,
+  selectedNodeIds: [],
+  primarySelectionId: null,
   focusedIssue: null,
   hoveredNodeId: null,
   isYamlPreviewOpen: false,
@@ -142,13 +150,41 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
     set({
       workflow: null,
       nodes: [],
-      selectedNodeId: null,
+      selectedNodeIds: [],
+      primarySelectionId: null,
       focusedIssue: null,
       baselineYaml: null,
       hoveredNodeId: null,
       isYamlPreviewOpen: false,
     }),
-  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setSelection: (ids) =>
+    set({ selectedNodeIds: ids, primarySelectionId: ids.length ? ids[ids.length - 1] : null }),
+  addToSelection: (id) =>
+    set((s) => {
+      if (s.selectedNodeIds.includes(id)) return s;
+      const next = [...s.selectedNodeIds, id];
+      return { selectedNodeIds: next, primarySelectionId: id };
+    }),
+  removeFromSelection: (id) =>
+    set((s) => {
+      const next = s.selectedNodeIds.filter((x) => x !== id);
+      return {
+        selectedNodeIds: next,
+        primarySelectionId: next.length ? next[next.length - 1] : null,
+      };
+    }),
+  clearSelection: () => set({ selectedNodeIds: [], primarySelectionId: null }),
+  selectAll: () =>
+    set((s) => {
+      const ids = s.nodes.map((n) => n.id);
+      return { selectedNodeIds: ids, primarySelectionId: ids.length ? ids[ids.length - 1] : null };
+    }),
+  removeSelected: () => {
+    const { selectedNodeIds, deleteNodes } = get();
+    if (selectedNodeIds.length === 0) return;
+    deleteNodes(selectedNodeIds);
+    set({ selectedNodeIds: [], primarySelectionId: null });
+  },
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
   setYamlPreviewOpen: (open) => set({ isYamlPreviewOpen: open }),
   // Reference-equality guard: prevents spurious notifications when the panel

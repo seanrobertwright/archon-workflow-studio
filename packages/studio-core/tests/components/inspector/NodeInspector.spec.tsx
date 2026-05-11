@@ -26,7 +26,7 @@ describe('NodeInspector', () => {
 
   it('renders all 7 tabs for command (AI-honoring)', () => {
     seedTwoVariants();
-    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    useBuilderStore.getState().setSelection(['n-cmd']);
     render(<NodeInspector />);
     for (const tab of [
       'General',
@@ -45,7 +45,7 @@ describe('NodeInspector', () => {
 
   it('renders General + Execution + Advanced only for bash (no AI tabs)', () => {
     seedTwoVariants();
-    useBuilderStore.getState().setSelectedNodeId('n-bash');
+    useBuilderStore.getState().setSelection(['n-bash']);
     render(<NodeInspector />);
     expect(screen.getByRole('tab', { name: /general/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /execution/i })).toBeDefined();
@@ -58,7 +58,7 @@ describe('NodeInspector', () => {
 
   it('switches tab content on click', () => {
     seedTwoVariants();
-    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    useBuilderStore.getState().setSelection(['n-cmd']);
     render(<NodeInspector />);
     fireEvent.click(screen.getByRole('tab', { name: /advanced/i }));
     expect(screen.getByTestId('tab-panel-advanced')).toBeDefined();
@@ -66,14 +66,14 @@ describe('NodeInspector', () => {
 
   it('shows the variant pill in the header', () => {
     seedTwoVariants();
-    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    useBuilderStore.getState().setSelection(['n-cmd']);
     render(<NodeInspector />);
     expect(screen.getByTitle('Variant').textContent).toBe('command');
   });
 
   it('renders the per-variant General Inspector body (Command field for command variant)', () => {
     seedTwoVariants();
-    useBuilderStore.getState().setSelectedNodeId('n-cmd');
+    useBuilderStore.getState().setSelection(['n-cmd']);
     render(<NodeInspector />);
     // General is the active tab on mount; CommandInspector renders a Command field.
     expect(screen.getByLabelText(/^command$/i)).toBeDefined();

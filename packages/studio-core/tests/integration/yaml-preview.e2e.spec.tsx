@@ -126,11 +126,11 @@ describe('YAML preview — end-to-end wiring', () => {
 
     // Set selection via store (same pattern as WorkflowBuilder.spec.tsx inspector test).
     act(() => {
-      useBuilderStore.getState().setSelectedNodeId(target);
+      useBuilderStore.getState().setSelection([target]);
     });
 
     // Store reflects the new selection.
-    expect(useBuilderStore.getState().selectedNodeId).toBe(target);
+    expect(useBuilderStore.getState().primarySelectionId).toBe(target);
 
     // The sourceMap produced by serializeYaml must contain a range entry for the
     // selected node — this is what drives CM6 line highlighting (drift 7.8.5).

@@ -133,7 +133,7 @@ describe('useValidation', () => {
       });
     });
     const storeState = useBuilderStore.getState();
-    expect(storeState.selectedNodeId).toBe('step1');
+    expect(storeState.primarySelectionId).toBe('step1');
     expect(storeState.focusedIssue).toEqual({ nodeId: 'step1', field: 'prompt' });
   });
 });

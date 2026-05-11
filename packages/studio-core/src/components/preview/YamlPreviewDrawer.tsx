@@ -8,9 +8,10 @@ import './YamlPreviewDrawer.css';
 export function YamlPreviewDrawer() {
   const meta = useBuilderStore((s) => s.workflow);
   const nodes = useBuilderStore((s) => s.nodes);
-  const selectedNodeId = useBuilderStore((s) => s.selectedNodeId);
+  const selectedNodeId = useBuilderStore((s) => s.primarySelectionId);
   const hoveredNodeId = useBuilderStore((s) => s.hoveredNodeId);
-  const setSelected = useBuilderStore((s) => s.setSelectedNodeId);
+  const setSelection = useBuilderStore((s) => s.setSelection);
+  const clearSelection = useBuilderStore((s) => s.clearSelection);
   const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
   const baseline = useBuilderStore((s) => s.baselineYaml);
 
@@ -74,7 +75,7 @@ export function YamlPreviewDrawer() {
         sourceMap={result.sourceMap}
         selectedNodeId={selectedNodeId}
         hoveredNodeId={hoveredNodeId}
-        onLinePick={(id) => setSelected(id)}
+        onLinePick={(id) => (id ? setSelection([id]) : clearSelection())}
         onLineHover={(id) => setHoveredNodeId(id)}
       />
     </div>
