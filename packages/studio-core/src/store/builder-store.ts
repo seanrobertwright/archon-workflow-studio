@@ -8,6 +8,17 @@ import { mergePatch } from './mergePatch';
 import { serializeYaml } from '../exporter/serializeYaml';
 import { withUndo, useUndoStore, type UndoSnapshot } from './undo-store';
 import { serializeClipboard, parseClipboard } from '../clipboard';
+import { layoutWithDagre } from '../hooks/useDagre';
+import {
+  alignLeft,
+  alignRight,
+  alignTop,
+  alignBottom,
+  alignCenterH,
+  alignCenterV,
+  distributeH,
+  distributeV,
+} from '../alignment';
 
 /**
  * Base fields whose semantics are AI-inference-specific (provider routing,
@@ -150,6 +161,13 @@ export interface BuilderState {
   pasteClipboard: () => Promise<void>;
   /** Copy then remove selected nodes in one operation. */
   cutSelection: () => Promise<void>;
+
+  /** Align selected nodes. Requires >= 2 selected nodes. */
+  alignSelection: (direction: 'left' | 'right' | 'top' | 'bottom' | 'centerH' | 'centerV') => void;
+  /** Distribute selected nodes evenly. Requires >= 3 selected nodes. */
+  distributeSelection: (axis: 'h' | 'v') => void;
+  /** Run dagre layout on the selection subgraph and update positions. */
+  autoArrangeSelection: () => void;
 }
 
 export const useBuilderStore = create<BuilderState>((set, get) => {
@@ -500,6 +518,81 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
 
     revertSnapshot: (snap) =>
       set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
+
+    alignSelection: (direction) => {
+      const { nodes, selectedNodeIds, positions, workflow } = get();
+      if (selectedNodeIds.length < 2) return;
+
+      const NODE_W = 200,
+        NODE_H = 60;
+      const rects: Record<string, { x: number; y: number; w: number; h: number }> = {};
+      for (const id of selectedNodeIds) {
+        const pos = positions[id] ?? { x: 0, y: 0 };
+        rects[id] = { x: pos.x, y: pos.y, w: NODE_W, h: NODE_H };
+      }
+
+      const fn = {
+        left: alignLeft,
+        right: alignRight,
+        top: alignTop,
+        bottom: alignBottom,
+        centerH: alignCenterH,
+        centerV: alignCenterV,
+      }[direction];
+      const newPos = fn(rects);
+
+      withUndo(`align-${direction}`, snapshot(`align-${direction}`));
+      set({ positions: { ...positions, ...newPos } });
+    },
+
+    distributeSelection: (axis) => {
+      const { nodes, selectedNodeIds, positions, workflow } = get();
+      if (selectedNodeIds.length < 3) return;
+
+      const NODE_W = 200,
+        NODE_H = 60;
+      const rects: Record<string, { x: number; y: number; w: number; h: number }> = {};
+      for (const id of selectedNodeIds) {
+        const pos = positions[id] ?? { x: 0, y: 0 };
+        rects[id] = { x: pos.x, y: pos.y, w: NODE_W, h: NODE_H };
+      }
+
+      const fn = axis === 'h' ? distributeH : distributeV;
+      const newPos = fn(rects);
+
+      withUndo(`distribute-${axis}`, snapshot(`distribute-${axis}`));
+      set({ positions: { ...positions, ...newPos } });
+    },
+
+    autoArrangeSelection: () => {
+      const { nodes, selectedNodeIds, positions } = get();
+      if (selectedNodeIds.length === 0) return;
+
+      const selectedSet = new Set(selectedNodeIds);
+      const selectedNodes = nodes.filter((n) => selectedSet.has(n.id));
+
+      // Build edges from depends_on within the selection only
+      const edges = selectedNodes.flatMap((n) =>
+        ((n.base?.depends_on as string[] | undefined) ?? [])
+          .filter((dep: string) => selectedSet.has(dep))
+          .map((dep: string) => ({ id: `${dep}->${n.id}`, source: dep, target: n.id })),
+      );
+
+      const layoutPositions = layoutWithDagre(
+        selectedNodes.map((n) => ({ id: n.id, position: positions[n.id] ?? { x: 0, y: 0 } })),
+        edges,
+      );
+
+      if (layoutPositions.size === 0) return;
+
+      withUndo('auto-arrange', snapshot('auto-arrange'));
+
+      const newPositions = { ...positions };
+      layoutPositions.forEach((pos, id) => {
+        newPositions[id] = pos;
+      });
+      set({ positions: newPositions });
+    },
   }; // end return
 }); // end create
 
