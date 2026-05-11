@@ -37,7 +37,7 @@ export function BuilderPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [source] = useState(routeState.source ?? 'project');
+  const source = routeState.source ?? 'project';
 
   // ── Load workflow on mount ──
   useEffect(() => {
@@ -96,7 +96,7 @@ export function BuilderPage() {
       cancelled = true;
       useBuilderStore.getState().clearWorkflow();
     };
-  }, [name, settings.cwd, settings.archonUrl]);
+  }, [name, settings.cwd, settings.archonUrl, location.key]);
 
   // ── Save handler ──
   const handleSave = useCallback(async () => {
@@ -211,6 +211,21 @@ export function BuilderPage() {
           }}
         >
           Saved offline — will sync when Archon is reachable.
+        </div>
+      )}
+
+      {/* Save error indicator */}
+      {saveStatus === 'error' && (
+        <div
+          style={{
+            padding: '6px 16px',
+            background: 'var(--studio-error-bg, #3a1a1a)',
+            color: 'var(--studio-error-fg, #ff6b6b)',
+            fontSize: 12,
+            flexShrink: 0,
+          }}
+        >
+          Save failed — check the Archon connection and try again.
         </div>
       )}
 
