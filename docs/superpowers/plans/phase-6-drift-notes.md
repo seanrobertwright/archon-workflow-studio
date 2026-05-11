@@ -610,3 +610,57 @@ from `validation/types`), avoiding the circular dependency
 
 **Anticipated by dispatch:** Partially (the "don't import" part was noted but the
 local alias solution wasn't spelled out).
+
+---
+
+## Drift 6.7.1 — WorkflowBuilderInner split: useValidation() must render inside providers
+
+**Plan stated:** "call `useValidation()` at the top of the component."
+
+**Reality:** `WorkflowBuilder` is itself the provider wrapper (`<ApiClientProvider>`,
+`<ThemeProvider>`, etc.). Calling `useValidation()` (which calls `useWorkflowApi()`,
+which throws outside `<ApiClientProvider>`) directly in `WorkflowBuilder` would
+unconditionally throw — hooks run before the component's JSX render, before any
+providers are mounted.
+
+**What shipped:** An inner component `WorkflowBuilderInner` was extracted. It receives
+`cwd`, `workflowName`, and `positions` as props and is rendered as the sole child of
+`<PositionProvider>`. `useValidation()` and `useState(drawerExpanded)` live in
+`WorkflowBuilderInner`. The outer `WorkflowBuilder` retains only provider setup and
+`usePositionPersistence`.
+
+**Impact on existing tests:** None — `WorkflowBuilder.spec.tsx` tests continue to pass
+(they use `noopClient` which satisfies `ApiClientProvider`, so `useWorkflowApi()` in
+`WorkflowBuilderInner` resolves cleanly). The "renders a bottom drawer slot" test finds
+`[data-testid="validation-drawer"]` unchanged (the `<section>` keeps the attribute).
+
+**Anticipated by dispatch:** No — the plan's Step 5 showed `useValidation()` inline at
+the top of `WorkflowBuilder`, which would have thrown in all tests. The inner-component
+split is the minimal correct fix.
+
+---
+
+## Drift 6.7.2 — ValidationPanel tests require afterEach(cleanup)
+
+**Plan provided spec:** used `beforeAll` only, no `afterEach(cleanup)`.
+
+**Reality:** Without cleanup, rendered React trees accumulate across tests in the same
+file. Tests 2 and 4 ("reports expanded state" and "filters by severity") failed with
+`Found multiple elements with role "button" and name /expand validation panel/i` and
+`/errors only/i` respectively — prior tests' DOM was still present.
+
+**What shipped:** `afterEach(() => cleanup())` added to the spec (mirrors the pattern in
+`NodeLibrary.spec.tsx` and `WorkflowBuilder.spec.tsx`). All 4 tests pass.
+
+**Anticipated by dispatch:** No — the plan's spec omitted cleanup. This is a standard
+bun:test requirement (no implicit cleanup unlike Jest + jsdom).
+
+---
+
+## Drift 6.7.3 — `drawerState` → `drawerExpanded` (boolean) in WorkflowBuilderInner
+
+**Plan noted:** Task 6.6 introduced `const [drawerState] = useState<'collapsed' | 'expanded'>('collapsed')` without a setter.
+
+**What shipped:** Replaced with `const [drawerExpanded, setDrawerExpanded] = useState(false)` in `WorkflowBuilderInner`. `data-drawer` attribute reads `drawerExpanded ? 'expanded' : 'collapsed'`, preserving the CSS token (`--studio-drawer-h: 240px`) behavior defined in `WorkflowBuilder.module.css`.
+
+**Anticipated by dispatch:** Yes — explicitly called out in the task description.
