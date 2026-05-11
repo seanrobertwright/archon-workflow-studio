@@ -3,6 +3,7 @@ import { useBuilderStore } from '../../store/builder-store';
 import { serializeYaml } from '../../exporter/serializeYaml';
 import { YamlPreview } from './YamlPreview';
 import { isModified } from './yamlDiffBadge';
+import './YamlPreviewDrawer.css';
 
 export function YamlPreviewDrawer() {
   const meta = useBuilderStore((s) => s.workflow);

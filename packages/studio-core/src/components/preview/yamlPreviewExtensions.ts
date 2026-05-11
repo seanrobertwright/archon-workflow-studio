@@ -1,4 +1,5 @@
 import { yaml } from '@codemirror/lang-yaml';
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { search, searchKeymap } from '@codemirror/search';
 import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, keymap } from '@codemirror/view';
@@ -155,5 +156,13 @@ export function domEventLineHandler(args: {
 
 /** Bundled "install everything" helper. */
 export function previewBaseExtensions(): Extension[] {
-  return [yamlLanguage(), yamlSearch(), readOnlyExt(), rangesField, targetsField, highlightField];
+  return [
+    yamlLanguage(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    yamlSearch(),
+    readOnlyExt(),
+    rangesField,
+    targetsField,
+    highlightField,
+  ];
 }
