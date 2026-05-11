@@ -1,69 +1,86 @@
-import { useEffect, useState } from 'react';
-import {
-  WorkflowBuilder,
-  fromWorkflowDefinition,
-  useBuilderStore,
-  useThemeStore,
-} from '@archon-studio/core';
-import { StubArchonApiClient } from '@archon-studio/api-archon';
-// Vite bundles YAML files as raw strings via `?raw`. The fixtures package's
-// own loader uses `node:fs` and can't be imported in the browser; we resolve
-// the asset path directly through Vite's module graph instead.
-import smokeYaml from '@archon-studio/fixtures/round-trip-fixtures/_smoke-pi-all-nodes.yaml?raw';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useMemo, useEffect } from 'react';
+import { ApiClientProvider, ThemeProvider, useThemeStore } from '@archon-studio/core';
+import { ArchonApiClient } from '@archon-studio/api-archon';
+import { useConnectionStore } from './connection-store';
+import { ConnectPage } from './routes/ConnectPage';
+import { WorkflowListPage } from './routes/WorkflowListPage';
+import { BuilderPage } from './routes/BuilderPage';
 
-const FIXTURE_NAME = '_smoke-pi-all-nodes';
-const FIXTURE_TEXT: Record<string, string> = {
-  [FIXTURE_NAME]: smokeYaml,
-};
-
-const client = new StubArchonApiClient({
-  loadFixture: (name) => {
-    const text = FIXTURE_TEXT[name];
-    if (text == null) {
-      throw new Error(`[standalone] no bundled fixture named '${name}'`);
-    }
-    return text;
-  },
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-export function App() {
-  const [loaded, setLoaded] = useState(false);
-
+/** Hydrates stores once; wraps all routes in ThemeProvider. */
+function AppShell() {
   useEffect(() => {
     useThemeStore.getState().hydrate();
+    useConnectionStore.getState().hydrate();
   }, []);
+  const preset = useThemeStore((s) => s.preset);
+  return (
+    <ThemeProvider preset={preset}>
+      <Outlet />
+    </ThemeProvider>
+  );
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const def = await client.getWorkflow(FIXTURE_NAME, '/dev');
-      if (cancelled) return;
-      // The cast is a structural no-op: WorkflowDefinition is shaped as
-      // Record<string, unknown> at runtime (Zod-validated, but not branded).
-      // Phase 1's `fromWorkflowDefinition` accepts the loose type so the same
-      // importer handles untrusted parsed JSON. Phase 9 may tighten by giving
-      // the importer an overload that accepts WorkflowDefinition directly.
-      const input = fromWorkflowDefinition(def as Record<string, unknown>);
-      useBuilderStore.getState().loadWorkflow(input);
-      setLoaded(true);
-    })().catch((err) => {
-      console.error('[standalone] fixture load failed', err);
+/**
+ * Guards routes that require a valid connection.
+ * Redirects to /connect if connection settings are absent.
+ * Provides ApiClientProvider with a memoised ArchonApiClient.
+ */
+function RequireConnection() {
+  const settings = useConnectionStore((s) => s.settings);
+
+  const client = useMemo(() => {
+    if (!settings) return null;
+    return new ArchonApiClient({
+      baseUrl: settings.archonUrl,
+      authHeader: settings.token || undefined,
     });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [settings?.archonUrl, settings?.token]);
 
-  if (!loaded) {
-    return <div style={{ padding: 24, color: 'var(--studio-fg)' }}>Loading {FIXTURE_NAME}…</div>;
-  }
+  if (!settings || !client) return <Navigate to="/connect" replace />;
 
   return (
-    <WorkflowBuilder
-      client={client}
-      archonUrl="__dev__"
-      cwd="__dev__"
-      workflowName={FIXTURE_NAME}
-    />
+    <ApiClientProvider client={client}>
+      <Outlet />
+    </ApiClientProvider>
+  );
+}
+
+/**
+ * Root route: smart redirect based on whether connection settings exist.
+ * Navigates to /workflows if connected, /connect if not.
+ */
+function HomeRedirect() {
+  const settings = useConnectionStore((s) => s.settings);
+  return <Navigate to={settings ? '/workflows' : '/connect'} replace />;
+}
+
+const router = createBrowserRouter([
+  {
+    element: <AppShell />,
+    children: [
+      { path: '/', element: <HomeRedirect /> },
+      { path: '/connect', element: <ConnectPage /> },
+      {
+        element: <RequireConnection />,
+        children: [
+          { path: '/workflows', element: <WorkflowListPage /> },
+          { path: '/builder/:name', element: <BuilderPage /> },
+        ],
+      },
+    ],
+  },
+]);
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }
