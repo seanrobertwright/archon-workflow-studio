@@ -287,3 +287,101 @@ signature compatibility — they now just forward to the shared helper.
 The `issueId` hash inputs are `(rule, path, message)` only — severity and source
 are NOT part of the hash. Refactoring these call sites does not perturb any
 existing issue IDs. All 354 tests pass unchanged after the refactor.
+
+---
+
+## Drift 6.4.1 — `WorkflowApiClient.validateWorkflow` does not accept `AbortSignal`
+
+**Plan assumed (stub signature):**
+```ts
+(def: unknown, signal?: AbortSignal) => Promise<{ valid: boolean; errors?: string[] }>
+```
+The stub in the spec has an optional `signal` parameter, implying the real client
+might accept one for HTTP cancellation.
+
+**Reality (`packages/studio-core/src/api/WorkflowApiClient.ts`):**
+```ts
+validateWorkflow(definition: WorkflowDefinition): Promise<ValidateResult>;
+```
+No `AbortSignal` parameter. The client interface is a pure data-in / data-out call
+with no cancellation surface.
+
+**What shipped:**
+- `runServer()` creates an `AbortController` for local state tracking (`inflightAbort`)
+  but does NOT pass `ac.signal` to `client.validateWorkflow`.
+- The `AbortController.abort()` call in `scheduleDebounced` / the else-branch of
+  `runDebounced` serves as a semantic marker ("a new run has superseded this one")
+  rather than a real HTTP cancel.
+- The monotonic sequence number (`mySeq !== this.seq`) is the effective stale-response
+  guard. It handles the case where a backgrounded tab's promise resolves after abort()
+  has been called and ignored.
+
+**Test spec adaptation:** The stub client signature was narrowed to
+`(def: unknown) => Promise<...>` (no `signal` parameter) to match reality.
+
+---
+
+## Drift 6.4.2 — Hardened `runDebounced` else-branch against stale server overwrites
+
+**Plan code (else-branch when `hasClientErrors` is true):**
+```ts
+} else {
+  this.isValidating = false;
+  if (hasClientErrors) this.serverIssues = []; // drop stale server claims
+  this.notify();
+}
+```
+
+**Gap:** If a prior `runServer` is still in-flight when new client errors appear,
+`this.seq` has not been bumped (seq only increments inside `runServer`). When the
+stale promise resolves, `mySeq === this.seq` is true, so it overwrites the freshly-
+cleared `serverIssues` with stale server data.
+
+**What shipped:** The else-branch now aborts and bumps seq before clearing:
+```ts
+if (hasClientErrors) {
+  this.inflightAbort?.abort();
+  this.seq++;
+  this.serverIssues = [];
+}
+this.isValidating = false;
+this.notify();
+```
+This ensures any pending `runServer` sees `mySeq !== this.seq` and exits without
+writing. No test exercises this race — it requires a server call to be in-flight
+at the exact moment new client errors appear — but the fix is one-liner cheap and
+removes a real correctness hole.
+
+---
+
+## Drift 6.4.3 — Server-tier issue construction: inline vs mkIssue
+
+**Plan used inline object construction** for server issues:
+```ts
+{ id: issueId('server.unknown', {}, msg), rule: 'server.unknown', severity: 'error', source: 'server', ... }
+```
+
+**What shipped:** Same inline construction, for two reasons:
+1. The `mk()` helper in `validation/rules/helpers.ts` is typed as accepting
+   `RuleSource` (`'client-instant' | 'client-debounced' | 'server'`). Using it
+   for server issues would work, but the helper lives in `./rules/helpers` and is
+   primarily for rule modules — importing it into the engine would blur the
+   module boundary.
+2. Server issues are structurally simpler (always `source: 'server'`, always
+   `path: {}`, always `severity: 'error'`) — the inline form is readable and
+   doesn't benefit from the helper's abstraction.
+
+`as const` casts were added to `severity` and `source` to satisfy the `Issue`
+interface's string literal types without the helper.
+
+---
+
+## Drift 6.4.4 — Test helper uses `Partial<Record<string, unknown>>` for `over`
+
+**Plan used:** `Partial<DagNode>` as the `over` parameter type in the `node()`
+helper, which causes TypeScript errors when callers pass `depends_on` (not
+present on all union members).
+
+**What shipped:** `Partial<Record<string, unknown>>` matches the established
+pattern from `structural.spec.ts` and avoids the union member type mismatch.
+The cast `as unknown as DagNode` handles the type bridge.
