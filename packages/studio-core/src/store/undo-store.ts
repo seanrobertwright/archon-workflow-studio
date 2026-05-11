@@ -55,3 +55,9 @@ export function withUndo(label: string, snap: UndoSnapshot): void {
   lastPushTime = now;
   useUndoStore.getState().push(snap);
 }
+
+/** Reset coalesce state — for test isolation only. */
+export function resetCoalesceState(): void {
+  lastLabel = '';
+  lastPushTime = 0;
+}

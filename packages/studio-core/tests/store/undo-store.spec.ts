@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { useUndoStore, withUndo } from '../../src/store/undo-store';
+import { useUndoStore, withUndo, resetCoalesceState } from '../../src/store/undo-store';
 
 const snap = (label: string) => ({
   label,
@@ -58,8 +58,14 @@ describe('useUndoStore', () => {
 });
 
 describe('withUndo', () => {
-  beforeEach(() => useUndoStore.setState({ past: [], future: [] }));
-  afterEach(() => useUndoStore.setState({ past: [], future: [] }));
+  beforeEach(() => {
+    useUndoStore.setState({ past: [], future: [] });
+    resetCoalesceState();
+  });
+  afterEach(() => {
+    useUndoStore.setState({ past: [], future: [] });
+    resetCoalesceState();
+  });
 
   it('synchronously pushes a snapshot when called', () => {
     withUndo('test', snap('test'));

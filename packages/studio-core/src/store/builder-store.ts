@@ -6,6 +6,7 @@ import { makeUniqueId } from '../nodes/shared/makeUniqueId';
 import { pickBaseFields } from '../nodes/shared/pickBaseFields';
 import { mergePatch } from './mergePatch';
 import { serializeYaml } from '../exporter/serializeYaml';
+import { withUndo, useUndoStore, type UndoSnapshot } from './undo-store';
 
 /**
  * Base fields whose semantics are AI-inference-specific (provider routing,
@@ -64,6 +65,8 @@ export interface IssuePath {
 export interface BuilderState {
   workflow: WorkflowMeta | null;
   nodes: BuilderNode[];
+  /** Node position map for undo snapshots (parallel to PositionContext for snapshotting). */
+  positions: Record<string, { x: number; y: number }>;
   /** All currently-selected node ids. Driven by Canvas onSelectionChange. */
   selectedNodeIds: string[];
   /** The last id added to the selection — used by single-node consumers (Inspector, YAML preview). */
@@ -76,6 +79,8 @@ export interface BuilderState {
   isYamlPreviewOpen: boolean;
   /** Serialized YAML captured at last loadWorkflow call. Used to detect unsaved changes. */
   baselineYaml: string | null;
+
+  setNodePosition: (id: string, x: number, y: number) => void;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
@@ -132,252 +137,282 @@ export interface BuilderState {
   renameNode: (oldId: string, newId: string) => void;
 }
 
-export const useBuilderStore = create<BuilderState>((set, get) => ({
-  workflow: null,
-  nodes: [],
-  selectedNodeIds: [],
-  primarySelectionId: null,
-  focusedIssue: null,
-  hoveredNodeId: null,
-  isYamlPreviewOpen: false,
-  baselineYaml: null,
-
-  loadWorkflow: (input) => {
-    const { yaml: baseline } = serializeYaml(input);
-    set({ workflow: input.meta, nodes: input.nodes, baselineYaml: baseline });
-  },
-  clearWorkflow: () =>
-    set({
-      workflow: null,
-      nodes: [],
-      selectedNodeIds: [],
-      primarySelectionId: null,
-      focusedIssue: null,
-      baselineYaml: null,
-      hoveredNodeId: null,
-      isYamlPreviewOpen: false,
-    }),
-  setSelection: (ids) =>
-    set({ selectedNodeIds: ids, primarySelectionId: ids.length ? ids[ids.length - 1] : null }),
-  addToSelection: (id) =>
-    set((s) => {
-      if (s.selectedNodeIds.includes(id)) return s;
-      const next = [...s.selectedNodeIds, id];
-      return { selectedNodeIds: next, primarySelectionId: id };
-    }),
-  removeFromSelection: (id) =>
-    set((s) => {
-      const next = s.selectedNodeIds.filter((x) => x !== id);
-      return {
-        selectedNodeIds: next,
-        primarySelectionId: next.length ? next[next.length - 1] : null,
-      };
-    }),
-  clearSelection: () => set({ selectedNodeIds: [], primarySelectionId: null }),
-  selectAll: () =>
-    set((s) => {
-      const ids = s.nodes.map((n) => n.id);
-      return { selectedNodeIds: ids, primarySelectionId: ids.length ? ids[ids.length - 1] : null };
-    }),
-  removeSelected: () => {
-    const { selectedNodeIds, deleteNodes } = get();
-    if (selectedNodeIds.length === 0) return;
-    deleteNodes(selectedNodeIds);
-    set({ selectedNodeIds: [], primarySelectionId: null });
-  },
-  setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
-  setYamlPreviewOpen: (open) => set({ isYamlPreviewOpen: open }),
-  // Reference-equality guard: prevents spurious notifications when the panel
-  // re-clicks the same row (the same path reference) — Zustand would otherwise
-  // notify on every set() even with an identical payload.
-  setFocusedIssue: (path) => set((s) => (s.focusedIssue === path ? s : { focusedIssue: path })),
-
-  setWorkflowName: (name) => set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
-  setWorkflowDescription: (description) =>
-    set((s) => (s.workflow ? { workflow: { ...s.workflow, description } } : s)),
-
-  addNode: (node) =>
-    set((s) => {
-      if (s.nodes.some((n) => n.id === node.id)) {
-        throw new Error(`addNode: id collision '${node.id}'`);
-      }
-      return { nodes: [...s.nodes, node] };
-    }),
-
-  addNodeFromVariant: (variantId, options) => {
-    const def = defaultRegistry[variantId];
-    const hint = options?.idHintOverride ?? def.library.defaultIdHint;
-    const existingIds = new Set(get().nodes.map((n) => n.id));
-    const id = makeUniqueId(hint, existingIds);
-    const data = {
-      ...(def.createDefault() as Record<string, unknown>),
-      ...(options?.dataPatch ?? {}),
+export const useBuilderStore = create<BuilderState>((set, get) => {
+  /** Capture a snapshot of current state for undo. */
+  const snapshot = (label: string): UndoSnapshot => {
+    const s = get();
+    return {
+      label,
+      workflow: s.workflow ?? null,
+      nodes: [...s.nodes],
+      positions: { ...s.positions },
     };
-    set((s) => ({
-      nodes: [...s.nodes, { id, variant: variantId, data, base: {}, unknown: {} }],
-    }));
-    return id;
-  },
+  };
 
-  updateNode: (id, patch) =>
-    set((s) => ({
-      nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
-    })),
+  return {
+    workflow: null,
+    nodes: [],
+    positions: {},
+    selectedNodeIds: [],
+    primarySelectionId: null,
+    focusedIssue: null,
+    hoveredNodeId: null,
+    isYamlPreviewOpen: false,
+    baselineYaml: null,
 
-  updateNodeData: (id, patch) => {
-    const node = get().nodes.find((n) => n.id === id);
-    if (!node) throw new Error(`updateNodeData: '${id}' not found`);
-    const partition = pickBaseFields(patch, node.variant);
-    set((s) => ({
-      nodes: s.nodes.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              data: mergePatch(n.data as Record<string, unknown>, partition.variantSpecific),
-              base: mergePatch(n.base, partition.base),
-              unknown: mergePatch(n.unknown, partition.unknown),
-            }
-          : n,
-      ),
-    }));
-  },
+    setNodePosition: (id, x, y) => set((s) => ({ positions: { ...s.positions, [id]: { x, y } } })),
 
-  convertVariant: (id, newVariantId) => {
-    const node = get().nodes.find((n) => n.id === id);
-    if (!node) throw new Error(`convertVariant: '${id}' not found`);
-    const target = defaultRegistry[newVariantId];
-    if (!target) throw new Error(`convertVariant: unknown variant '${newVariantId}'`);
-    if (node.variant === newVariantId) return;
+    loadWorkflow: (input) => {
+      const { yaml: baseline } = serializeYaml(input);
+      set({ workflow: input.meta, nodes: input.nodes, baselineYaml: baseline, positions: {} });
+      useUndoStore.getState().clear();
+    },
+    clearWorkflow: () => {
+      set({
+        workflow: null,
+        nodes: [],
+        positions: {},
+        selectedNodeIds: [],
+        primarySelectionId: null,
+        focusedIssue: null,
+        baselineYaml: null,
+        hoveredNodeId: null,
+        isYamlPreviewOpen: false,
+      });
+      useUndoStore.getState().clear();
+    },
+    setSelection: (ids) =>
+      set({ selectedNodeIds: ids, primarySelectionId: ids.length ? ids[ids.length - 1] : null }),
+    addToSelection: (id) =>
+      set((s) => {
+        if (s.selectedNodeIds.includes(id)) return s;
+        const next = [...s.selectedNodeIds, id];
+        return { selectedNodeIds: next, primarySelectionId: id };
+      }),
+    removeFromSelection: (id) =>
+      set((s) => {
+        const next = s.selectedNodeIds.filter((x) => x !== id);
+        return {
+          selectedNodeIds: next,
+          primarySelectionId: next.length ? next[next.length - 1] : null,
+        };
+      }),
+    clearSelection: () => set({ selectedNodeIds: [], primarySelectionId: null }),
+    selectAll: () =>
+      set((s) => {
+        const ids = s.nodes.map((n) => n.id);
+        return {
+          selectedNodeIds: ids,
+          primarySelectionId: ids.length ? ids[ids.length - 1] : null,
+        };
+      }),
+    removeSelected: () => {
+      const { selectedNodeIds, deleteNodes } = get();
+      if (selectedNodeIds.length === 0) return;
+      deleteNodes(selectedNodeIds);
+      set({ selectedNodeIds: [], primarySelectionId: null });
+    },
+    setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
+    setYamlPreviewOpen: (open) => set({ isYamlPreviewOpen: open }),
+    // Reference-equality guard: prevents spurious notifications when the panel
+    // re-clicks the same row (the same path reference) — Zustand would otherwise
+    // notify on every set() even with an identical payload.
+    setFocusedIssue: (path) => set((s) => (s.focusedIssue === path ? s : { focusedIssue: path })),
 
-    // Re-classify the source's variant-specific data under the TARGET variant's
-    // lens. pickBaseFields buckets every recognised key into variantSpecific /
-    // base / unknown; anything the target can't accept ends up in `unknown`.
-    const currentDagShape = (node.data as Record<string, unknown>) ?? {};
-    const reclassified = pickBaseFields(currentDagShape, newVariantId);
+    setWorkflowName: (name) => set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
+    setWorkflowDescription: (description) =>
+      set((s) => (s.workflow ? { workflow: { ...s.workflow, description } } : s)),
 
-    // The variant-data forward-compat bag (`data._unknown`) is preserved
-    // verbatim below — strip it from `reclassified.unknown` so it is NOT
-    // duplicated into `n.unknown` on the merge at the bottom of this action.
-    delete reclassified.unknown._unknown;
+    addNode: (node) => {
+      withUndo('add node', snapshot('add node'));
+      set((s) => {
+        if (s.nodes.some((n) => n.id === node.id)) {
+          throw new Error(`addNode: id collision '${node.id}'`);
+        }
+        return { nodes: [...s.nodes, node] };
+      });
+    },
 
-    // Anything in `reclassified.unknown` at this point is a key that was
-    // variant-specific to the source but isn't recognised by the target —
-    // park it under `_converted_from` so a convert-back can restore it.
-    const parkedFromData: Record<string, unknown> = { ...reclassified.unknown };
-    reclassified.unknown = {};
+    addNodeFromVariant: (variantId, options) => {
+      withUndo('add node', snapshot('add node'));
+      const def = defaultRegistry[variantId];
+      const hint = options?.idHintOverride ?? def.library.defaultIdHint;
+      const existingIds = new Set(get().nodes.map((n) => n.id));
+      const id = makeUniqueId(hint, existingIds);
+      const data = {
+        ...(def.createDefault() as Record<string, unknown>),
+        ...(options?.dataPatch ?? {}),
+      };
+      set((s) => ({
+        nodes: [...s.nodes, { id, variant: variantId, data, base: {}, unknown: {} }],
+      }));
+      return id;
+    },
 
-    // Capability-aware base-field parking: when target ignores AI fields,
-    // strip the AI-inference-specific subset (see AI_BASE_KEYS) and park.
-    // Flow-control base fields (depends_on, when, retry, hooks, sandbox,
-    // trigger_rule, idle_timeout) and runtime-relevant lists (mcp, skills,
-    // agents, context) are kept regardless.
-    const newBase: Record<string, unknown> = { ...node.base };
-    const parkedFromBase: Record<string, unknown> = {};
-    if (!target.capabilities.honorsAiFields) {
-      for (const k of Object.keys(newBase)) {
-        if (AI_BASE_KEYS.has(k)) {
-          parkedFromBase[k] = newBase[k];
-          delete newBase[k];
+    updateNode: (id, patch) => {
+      withUndo('update node', snapshot('update node'));
+      set((s) => ({
+        nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+      }));
+    },
+
+    updateNodeData: (id, patch) => {
+      const node = get().nodes.find((n) => n.id === id);
+      if (!node) throw new Error(`updateNodeData: '${id}' not found`);
+      const partition = pickBaseFields(patch, node.variant);
+      set((s) => ({
+        nodes: s.nodes.map((n) =>
+          n.id === id
+            ? {
+                ...n,
+                data: mergePatch(n.data as Record<string, unknown>, partition.variantSpecific),
+                base: mergePatch(n.base, partition.base),
+                unknown: mergePatch(n.unknown, partition.unknown),
+              }
+            : n,
+        ),
+      }));
+    },
+
+    convertVariant: (id, newVariantId) => {
+      withUndo('convert variant', snapshot('convert variant'));
+      const node = get().nodes.find((n) => n.id === id);
+      if (!node) throw new Error(`convertVariant: '${id}' not found`);
+      const target = defaultRegistry[newVariantId];
+      if (!target) throw new Error(`convertVariant: unknown variant '${newVariantId}'`);
+      if (node.variant === newVariantId) return;
+
+      // Re-classify the source's variant-specific data under the TARGET variant's
+      // lens. pickBaseFields buckets every recognised key into variantSpecific /
+      // base / unknown; anything the target can't accept ends up in `unknown`.
+      const currentDagShape = (node.data as Record<string, unknown>) ?? {};
+      const reclassified = pickBaseFields(currentDagShape, newVariantId);
+
+      // The variant-data forward-compat bag (`data._unknown`) is preserved
+      // verbatim below — strip it from `reclassified.unknown` so it is NOT
+      // duplicated into `n.unknown` on the merge at the bottom of this action.
+      delete reclassified.unknown._unknown;
+
+      // Anything in `reclassified.unknown` at this point is a key that was
+      // variant-specific to the source but isn't recognised by the target —
+      // park it under `_converted_from` so a convert-back can restore it.
+      const parkedFromData: Record<string, unknown> = { ...reclassified.unknown };
+      reclassified.unknown = {};
+
+      // Capability-aware base-field parking: when target ignores AI fields,
+      // strip the AI-inference-specific subset (see AI_BASE_KEYS) and park.
+      // Flow-control base fields (depends_on, when, retry, hooks, sandbox,
+      // trigger_rule, idle_timeout) and runtime-relevant lists (mcp, skills,
+      // agents, context) are kept regardless.
+      const newBase: Record<string, unknown> = { ...node.base };
+      const parkedFromBase: Record<string, unknown> = {};
+      if (!target.capabilities.honorsAiFields) {
+        for (const k of Object.keys(newBase)) {
+          if (AI_BASE_KEYS.has(k)) {
+            parkedFromBase[k] = newBase[k];
+            delete newBase[k];
+          }
         }
       }
-    }
 
-    const previousDataUnknown = (currentDagShape._unknown as Record<string, unknown>) ?? {};
-    const newData: Record<string, unknown> = {
-      ...(target.createDefault() as Record<string, unknown>),
-      ...reclassified.variantSpecific,
-      _unknown: {
-        ...previousDataUnknown,
-        _converted_from: {
-          variant: node.variant,
-          ...parkedFromData,
-          ...parkedFromBase,
+      const previousDataUnknown = (currentDagShape._unknown as Record<string, unknown>) ?? {};
+      const newData: Record<string, unknown> = {
+        ...(target.createDefault() as Record<string, unknown>),
+        ...reclassified.variantSpecific,
+        _unknown: {
+          ...previousDataUnknown,
+          _converted_from: {
+            variant: node.variant,
+            ...parkedFromData,
+            ...parkedFromBase,
+          },
         },
-      },
-    };
+      };
 
-    set((s) => ({
-      nodes: s.nodes.map((n) =>
-        n.id === id ? { ...n, variant: newVariantId, data: newData, base: newBase } : n,
-      ),
-    }));
-  },
+      set((s) => ({
+        nodes: s.nodes.map((n) =>
+          n.id === id ? { ...n, variant: newVariantId, data: newData, base: newBase } : n,
+        ),
+      }));
+    },
 
-  deleteNodes: (ids) => {
-    const idSet = new Set(ids);
-    set((s) => ({
-      nodes: s.nodes
-        .filter((n) => !idSet.has(n.id))
-        .map((n) => {
-          const dep = (n.base.depends_on as string[] | undefined) ?? undefined;
-          if (!dep) return n;
-          const filtered = dep.filter((d) => !idSet.has(d));
+    deleteNodes: (ids) => {
+      withUndo('delete nodes', snapshot('delete nodes'));
+      const idSet = new Set(ids);
+      set((s) => ({
+        nodes: s.nodes
+          .filter((n) => !idSet.has(n.id))
+          .map((n) => {
+            const dep = (n.base.depends_on as string[] | undefined) ?? undefined;
+            if (!dep) return n;
+            const filtered = dep.filter((d) => !idSet.has(d));
+            const newBase = { ...n.base };
+            if (filtered.length === 0) delete newBase.depends_on;
+            else newBase.depends_on = filtered;
+            return { ...n, base: newBase };
+          }),
+      }));
+    },
+
+    connect: (source, target) =>
+      set((s) => ({
+        nodes: s.nodes.map((n) => {
+          if (n.id !== target) return n;
+          const dep = (n.base.depends_on as string[] | undefined) ?? [];
+          if (dep.includes(source)) return n;
+          return { ...n, base: { ...n.base, depends_on: [...dep, source] } };
+        }),
+      })),
+
+    disconnect: (source, target) =>
+      set((s) => ({
+        nodes: s.nodes.map((n) => {
+          if (n.id !== target) return n;
+          const dep = (n.base.depends_on as string[] | undefined) ?? [];
+          const filtered = dep.filter((d) => d !== source);
           const newBase = { ...n.base };
           if (filtered.length === 0) delete newBase.depends_on;
           else newBase.depends_on = filtered;
           return { ...n, base: newBase };
         }),
-    }));
-  },
+      })),
 
-  connect: (source, target) =>
-    set((s) => ({
-      nodes: s.nodes.map((n) => {
-        if (n.id !== target) return n;
-        const dep = (n.base.depends_on as string[] | undefined) ?? [];
-        if (dep.includes(source)) return n;
-        return { ...n, base: { ...n.base, depends_on: [...dep, source] } };
-      }),
-    })),
-
-  disconnect: (source, target) =>
-    set((s) => ({
-      nodes: s.nodes.map((n) => {
-        if (n.id !== target) return n;
-        const dep = (n.base.depends_on as string[] | undefined) ?? [];
-        const filtered = dep.filter((d) => d !== source);
-        const newBase = { ...n.base };
-        if (filtered.length === 0) delete newBase.depends_on;
-        else newBase.depends_on = filtered;
-        return { ...n, base: newBase };
-      }),
-    })),
-
-  renameNode: (oldId, newId) => {
-    if (oldId === newId) return;
-    const state = get();
-    if (state.nodes.some((n) => n.id === newId)) {
-      throw new Error(`renameNode: collision — '${newId}' already exists`);
-    }
-    if (!state.nodes.some((n) => n.id === oldId)) {
-      throw new Error(`renameNode: '${oldId}' not found`);
-    }
-
-    // Cascading rename — see spec §5.2 / §7.4.
-    const renameRefs = (n: BuilderNode): BuilderNode => {
-      const next: BuilderNode = { ...n, base: { ...n.base } };
-      // 1. id itself
-      if (next.id === oldId) next.id = newId;
-      // 2. depends_on
-      const dep = (next.base.depends_on as string[] | undefined) ?? undefined;
-      if (dep) next.base.depends_on = dep.map((d) => (d === oldId ? newId : d));
-      // 3. when: strings ($oldId.* → $newId.*)
-      const w = next.base.when as string | undefined;
-      if (typeof w === 'string') {
-        next.base.when = w.replace(new RegExp(`\\$${escapeRegExp(oldId)}\\b`, 'g'), `$${newId}`);
+    renameNode: (oldId, newId) => {
+      if (oldId === newId) return;
+      const state = get();
+      if (state.nodes.some((n) => n.id === newId)) {
+        throw new Error(`renameNode: collision — '${newId}' already exists`);
       }
-      // 4. body-text refs ($oldId.output… in prompt/bash/script/loop.prompt/
-      //    approval.message). Each variant declares its own rewriter via the
-      //    optional `renameBodyRefs` slot; variants without body text omit it.
-      const variantDef = defaultRegistry[next.variant];
-      if (variantDef.renameBodyRefs) {
-        next.data = variantDef.renameBodyRefs(next.data as never, oldId, newId);
+      if (!state.nodes.some((n) => n.id === oldId)) {
+        throw new Error(`renameNode: '${oldId}' not found`);
       }
-      return next;
-    };
-    set({ nodes: state.nodes.map(renameRefs) });
-  },
-}));
+
+      // Cascading rename — see spec §5.2 / §7.4.
+      const renameRefs = (n: BuilderNode): BuilderNode => {
+        const next: BuilderNode = { ...n, base: { ...n.base } };
+        // 1. id itself
+        if (next.id === oldId) next.id = newId;
+        // 2. depends_on
+        const dep = (next.base.depends_on as string[] | undefined) ?? undefined;
+        if (dep) next.base.depends_on = dep.map((d) => (d === oldId ? newId : d));
+        // 3. when: strings ($oldId.* → $newId.*)
+        const w = next.base.when as string | undefined;
+        if (typeof w === 'string') {
+          next.base.when = w.replace(new RegExp(`\\$${escapeRegExp(oldId)}\\b`, 'g'), `$${newId}`);
+        }
+        // 4. body-text refs ($oldId.output… in prompt/bash/script/loop.prompt/
+        //    approval.message). Each variant declares its own rewriter via the
+        //    optional `renameBodyRefs` slot; variants without body text omit it.
+        const variantDef = defaultRegistry[next.variant];
+        if (variantDef.renameBodyRefs) {
+          next.data = variantDef.renameBodyRefs(next.data as never, oldId, newId);
+        }
+        return next;
+      };
+      set({ nodes: state.nodes.map(renameRefs) });
+    },
+  }; // end return
+}); // end create
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
