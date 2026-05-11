@@ -13,6 +13,8 @@ import { NodeLibrary } from './NodeLibrary';
 import { NodeInspector } from './inspector/NodeInspector';
 import { Toolbar } from './Toolbar';
 import { StudioErrorBoundary } from './StudioErrorBoundary';
+import { ValidationPanel } from './ValidationPanel';
+import { useValidation } from '../validation/useValidation';
 import styles from './WorkflowBuilder.module.css';
 
 export interface WorkflowBuilderProps {
@@ -25,6 +27,52 @@ export interface WorkflowBuilderProps {
   workflowName: string;
 }
 
+/**
+ * Inner component — rendered inside all providers (ApiClientProvider, ThemeProvider, etc.)
+ * so hooks like useValidation() (which calls useWorkflowApi()) are safe to call here.
+ */
+function WorkflowBuilderInner({
+  cwd,
+  workflowName,
+  positions,
+}: {
+  cwd: string;
+  workflowName: string;
+  positions: ReturnType<typeof usePositionPersistence>;
+}) {
+  const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
+  const [drawerExpanded, setDrawerExpanded] = useState(false);
+  const { issues, isValidating, focusIssue } = useValidation();
+
+  return (
+    <div className={styles.shell} data-drawer={drawerExpanded ? 'expanded' : 'collapsed'}>
+      <div className={styles.toolbar}>
+        <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
+      </div>
+      <div className={styles.library}>
+        <NodeLibrary cwd={cwd} />
+      </div>
+      <main className={styles.canvas}>
+        <ReactFlowProvider>
+          <Canvas />
+        </ReactFlowProvider>
+      </main>
+      <div className={styles.inspector}>
+        <NodeInspector />
+      </div>
+      <section className={styles.drawer} data-testid="validation-drawer">
+        <ValidationPanel
+          issues={issues}
+          expanded={drawerExpanded}
+          onToggle={setDrawerExpanded}
+          onFocusIssue={focusIssue}
+          isValidating={isValidating}
+        />
+      </section>
+    </div>
+  );
+}
+
 export function WorkflowBuilder({
   client,
   theme,
@@ -34,8 +82,6 @@ export function WorkflowBuilder({
 }: WorkflowBuilderProps) {
   const queryClient = useMemo(() => new QueryClient(), []);
   const positions = usePositionPersistence(archonUrl, cwd, workflowName);
-  const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
-  const [drawerState] = useState<'collapsed' | 'expanded'>('collapsed');
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -43,23 +89,7 @@ export function WorkflowBuilder({
         <ThemeProvider preset={theme}>
           <StudioErrorBoundary>
             <PositionProvider value={positions}>
-              <div className={styles.shell} data-drawer={drawerState}>
-                <div className={styles.toolbar}>
-                  <Toolbar workflowName={storeName} onResetLayout={positions.reset} />
-                </div>
-                <div className={styles.library}>
-                  <NodeLibrary cwd={cwd} />
-                </div>
-                <main className={styles.canvas}>
-                  <ReactFlowProvider>
-                    <Canvas />
-                  </ReactFlowProvider>
-                </main>
-                <div className={styles.inspector}>
-                  <NodeInspector />
-                </div>
-                <section className={styles.drawer} data-testid="validation-drawer" />
-              </div>
+              <WorkflowBuilderInner cwd={cwd} workflowName={workflowName} positions={positions} />
             </PositionProvider>
           </StudioErrorBoundary>
         </ThemeProvider>
