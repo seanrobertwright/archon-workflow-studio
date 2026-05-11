@@ -35,3 +35,14 @@ export type { UseValidationResult } from './validation/useValidation';
 
 export { serializeClipboard, parseClipboard } from './clipboard';
 export type { ClipboardEnvelope } from './clipboard';
+
+export {
+  alignLeft,
+  alignRight,
+  alignTop,
+  alignBottom,
+  alignCenterH,
+  alignCenterV,
+  distributeH,
+  distributeV,
+} from './alignment';

@@ -1,4 +1,5 @@
 import { ThemePicker } from './ThemePicker';
+import { useBuilderStore } from '../store/builder-store';
 
 export interface ToolbarProps {
   workflowName: string;
@@ -27,6 +28,12 @@ export function Toolbar({
   onToggleYamlPreview,
   showThemePicker = true,
 }: ToolbarProps) {
+  const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
+  const alignSelection = useBuilderStore((s) => s.alignSelection);
+  const distributeSelection = useBuilderStore((s) => s.distributeSelection);
+  const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
+  const hasSelection = selectedNodeIds.length >= 2;
+
   return (
     <header
       style={{
@@ -53,6 +60,119 @@ export function Toolbar({
       >
         Reset layout
       </button>
+      {hasSelection && (
+        <div role="group" aria-label="Alignment">
+          <button
+            type="button"
+            aria-label="Align left"
+            onClick={() => alignSelection('left')}
+            style={{
+              background: 'transparent',
+              color: 'var(--studio-fg)',
+              border: '1px solid var(--studio-muted)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            ⬤←
+          </button>
+          <button
+            type="button"
+            aria-label="Align right"
+            onClick={() => alignSelection('right')}
+            style={{
+              background: 'transparent',
+              color: 'var(--studio-fg)',
+              border: '1px solid var(--studio-muted)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            →⬤
+          </button>
+          <button
+            type="button"
+            aria-label="Align top"
+            onClick={() => alignSelection('top')}
+            style={{
+              background: 'transparent',
+              color: 'var(--studio-fg)',
+              border: '1px solid var(--studio-muted)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            ⬤↑
+          </button>
+          <button
+            type="button"
+            aria-label="Align bottom"
+            onClick={() => alignSelection('bottom')}
+            style={{
+              background: 'transparent',
+              color: 'var(--studio-fg)',
+              border: '1px solid var(--studio-muted)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            ↓⬤
+          </button>
+          {selectedNodeIds.length >= 3 && (
+            <>
+              <button
+                type="button"
+                aria-label="Distribute horizontally"
+                onClick={() => distributeSelection('h')}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--studio-fg)',
+                  border: '1px solid var(--studio-muted)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '4px 8px',
+                  cursor: 'pointer',
+                }}
+              >
+                ⇔
+              </button>
+              <button
+                type="button"
+                aria-label="Distribute vertically"
+                onClick={() => distributeSelection('v')}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--studio-fg)',
+                  border: '1px solid var(--studio-muted)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '4px 8px',
+                  cursor: 'pointer',
+                }}
+              >
+                ⇕
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label="Auto arrange"
+            onClick={() => autoArrangeSelection()}
+            style={{
+              background: 'transparent',
+              color: 'var(--studio-fg)',
+              border: '1px solid var(--studio-muted)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            ⊞
+          </button>
+        </div>
+      )}
       {onToggleYamlPreview ? (
         <button
           type="button"

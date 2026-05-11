@@ -68,6 +68,8 @@ function WorkflowBuilderInner({
   const removeSelected = useBuilderStore((s) => s.removeSelected);
   const selectAll = useBuilderStore((s) => s.selectAll);
   const clearSelection = useBuilderStore((s) => s.clearSelection);
+  const alignSelection = useBuilderStore((s) => s.alignSelection);
+  const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
 
   const hotkeyOptions = { enableOnFormTags: false, enableOnContentEditable: false } as const;
 
@@ -109,6 +111,46 @@ function WorkflowBuilderInner({
     (e) => {
       e.preventDefault();
       removeSelected();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.alignLeft,
+    (e) => {
+      e.preventDefault();
+      alignSelection('left');
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.alignRight,
+    (e) => {
+      e.preventDefault();
+      alignSelection('right');
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.alignTop,
+    (e) => {
+      e.preventDefault();
+      alignSelection('top');
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.alignBottom,
+    (e) => {
+      e.preventDefault();
+      alignSelection('bottom');
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.autoArrangeSelection,
+    (e) => {
+      e.preventDefault();
+      autoArrangeSelection();
     },
     hotkeyOptions,
   );
