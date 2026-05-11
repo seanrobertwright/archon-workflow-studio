@@ -19,6 +19,7 @@ import {
   distributeH,
   distributeV,
 } from '../alignment';
+import type { Guide } from '../smart-guides';
 
 /**
  * Base fields whose semantics are AI-inference-specific (provider routing,
@@ -93,8 +94,14 @@ export interface BuilderState {
   baselineYaml: string | null;
   /** In-memory clipboard fallback for environments where navigator.clipboard is unavailable. */
   clipboard: string | null;
+  /** Currently active smart guide lines shown during node drag. */
+  activeGuides: Guide[];
+  /** Whether snap-to-grid is enabled. */
+  gridSnap: boolean;
 
   setNodePosition: (id: string, x: number, y: number) => void;
+  setActiveGuides: (guides: Guide[]) => void;
+  toggleGridSnap: () => void;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
@@ -193,8 +200,12 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     isYamlPreviewOpen: false,
     baselineYaml: null,
     clipboard: null,
+    activeGuides: [],
+    gridSnap: false,
 
     setNodePosition: (id, x, y) => set((s) => ({ positions: { ...s.positions, [id]: { x, y } } })),
+    setActiveGuides: (guides) => set({ activeGuides: guides }),
+    toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
 
     loadWorkflow: (input) => {
       const { yaml: baseline } = serializeYaml(input);
@@ -212,6 +223,7 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
         baselineYaml: null,
         hoveredNodeId: null,
         isYamlPreviewOpen: false,
+        activeGuides: [],
       });
       useUndoStore.getState().clear();
     },

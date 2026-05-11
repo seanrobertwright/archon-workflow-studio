@@ -28,6 +28,8 @@ import {
   makeOnEdgesDelete,
   makeOnNodesDelete,
 } from './canvas/canvasHandlers';
+import { computeGuides } from '../smart-guides';
+import { SmartGuidesLayer } from './SmartGuidesLayer';
 
 export function Canvas() {
   const positions = usePositionContext();
@@ -44,6 +46,9 @@ export function Canvas() {
   const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
   const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
   const setNodePosition = useBuilderStore((s) => s.setNodePosition);
+  const activeGuides = useBuilderStore((s) => s.activeGuides);
+  const setActiveGuides = useBuilderStore((s) => s.setActiveGuides);
+  const gridSnap = useBuilderStore((s) => s.gridSnap);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -183,8 +188,15 @@ export function Canvas() {
     [reactFlow, addNodeFromVariant, positions],
   );
 
+  const NODE_W = 200,
+    NODE_H = 60;
+
   return (
-    <div onDrop={onDrop} onDragOver={onDragOver} style={{ width: '100%', height: '100%' }}>
+    <div
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -197,7 +209,27 @@ export function Canvas() {
         onPaneClick={() => clearSelection()}
         onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
+        onNodeDrag={(_event, node) => {
+          const allNodes = useBuilderStore.getState().nodes;
+          const allPositions = useBuilderStore.getState().positions;
+          const draggingRect = {
+            id: node.id,
+            x: node.position.x,
+            y: node.position.y,
+            w: NODE_W,
+            h: NODE_H,
+          };
+          const stationary = allNodes
+            .filter((n) => n.id !== node.id)
+            .map((n) => {
+              const pos = allPositions[n.id] ?? { x: 0, y: 0 };
+              return { id: n.id, x: pos.x, y: pos.y, w: NODE_W, h: NODE_H };
+            });
+          const guides = computeGuides(draggingRect, stationary, 8);
+          setActiveGuides(guides);
+        }}
         onNodeDragStop={(_event, node) => {
+          setActiveGuides([]);
           withUndo('drag node', {
             label: 'drag node',
             workflow: useBuilderStore.getState().workflow ?? null,
@@ -206,12 +238,15 @@ export function Canvas() {
           });
           setNodePosition(node.id, node.position.x, node.position.y);
         }}
+        snapToGrid={gridSnap}
+        snapGrid={[20, 20]}
         fitView
         proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls position="top-left" />
       </ReactFlow>
+      <SmartGuidesLayer guides={activeGuides} width={800} height={600} />
     </div>
   );
 }
