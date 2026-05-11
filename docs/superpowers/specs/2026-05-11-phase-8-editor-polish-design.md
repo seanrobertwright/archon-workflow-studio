@@ -87,6 +87,8 @@ Coalescing handled by `withUndoCoalesced(label, fn, 400)` — used for `updateNo
 | setNodePosition (drag-stop, not drag-move) | | |
 | dropNode | | |
 
+**Position-write semantics.** `setNodePosition` from a user drag is immediate-snapshotted via the drag-start holding slot (see *Drag handling* below). Programmatic position writes from `alignSelection` / `distributeSelection` / `autoArrangeSelection` are *not* snapshotted by `setNodePosition` itself — they're wrapped by their parent action's `withUndo`, which captures the whole positions map as part of its snapshot. Each user-visible action produces exactly one snapshot.
+
 ### Drag handling
 
 React Flow fires `onNodeDrag` continuously and `onNodeDragStop` once. Capture the before-state on `onNodeDragStart` (write to a holding slot, not the stack) and commit the snapshot on `onNodeDragStop`. Same pattern for marquee-multi-drag (snapshot once per drag, not per node).
@@ -122,7 +124,11 @@ setSelection(ids: string[]): void;        // replace
 addToSelection(id: string): void;         // shift-click new
 removeFromSelection(id: string): void;    // shift-click already-selected
 clearSelection(): void;                   // background click / Esc
+selectAll(): void;                        // mod+a — sets to all node IDs
+removeSelected(): void;                   // delete / backspace — removeNode batch
 ```
+
+**Cut** (`mod+x`) is implemented as copy-then-`removeSelected` in a single store batch (one undo snapshot labeled "Cut N nodes").
 
 Canvas wires `onSelectionChange({ nodes }) → setSelection(nodes.map(n => n.id))`. Each React Flow node's `selected` flag is derived in the node-conversion step from `selectedNodeIds.includes(node.id)` — never written directly.
 
@@ -152,7 +158,10 @@ Versioned envelope:
 1. Try `navigator.clipboard.readText()`; fall back to `useClipboardStore.lastCopy`.
 2. Parse + validate envelope (`__archonStudio === 'clipboard-v1'`, `nodes` is an array). On failure, toast "Nothing to paste" and bail.
 3. Run nodes through the same normalizer as `fromWorkflowDefinition` (preserves `_unknown`, ensures shape).
-4. **ID remap.** Generate unique IDs against current store: `${id}-copy`, `${id}-copy-2`, etc. Build `Map<oldId, newId>`.
+4. **ID remap.** Generate unique IDs against current store. The collision algorithm:
+   - Strip any trailing `-copy(-N)?` suffix from the source ID to get the *base*: `build-copy-3` → `build`.
+   - Try `${base}-copy`; if taken, try `${base}-copy-2`, `${base}-copy-3`, … until free against both the current store and the IDs already assigned earlier in this paste batch.
+   - Build `Map<oldId, newId>` for the full paste set before any node is added, so `depends_on` rewrite in step 5 is deterministic.
 5. **`depends_on` rewrite.** Per pasted node, walk `base.depends_on`:
    - If dep is in paste set → rewrite to new ID.
    - If dep is external → drop it (paste-as-detached-subgraph semantics).
@@ -199,7 +208,7 @@ Absolutely-positioned overlay inside the React Flow viewport (`<Panel position="
 
 **Cleared on:** `onNodeDragStop`, `onSelectionChange`, Esc.
 
-**Performance:** Memoize per-frame by hashing dragged position. Guard `if (allNodes.length > 200) return []` to keep drag responsive at scale.
+**Performance:** Cache the `others`-set reference values (the 6 edges/centers per non-dragged node) when a drag starts; the dragged node is the only thing moving per frame, so per-frame work reduces to comparing the dragged node against a precomputed table. Invalidate the cache on `onNodeDragStop` / `onSelectionChange`. Guard `if (allNodes.length > 200) return []` to keep drag responsive at scale.
 
 ### Snap-to-grid
 
