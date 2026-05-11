@@ -61,4 +61,60 @@ describe('content rules — {{var}} scan', () => {
     const issues = runContentRules([prompt('a', 'first'), prompt('b', body, ['a'])]);
     expect(issues.some((i) => i.rule === 'content.var.unknown')).toBe(false);
   });
+
+  // Lock in inline-backtick stripping (second pass of stripFences).
+  it('ignores {{ids.X.Y}} inside inline code spans', () => {
+    const body = 'docs: `{{ids.ghost.output.value}}` real: {{ids.a.output.value}}';
+    const issues = runContentRules([prompt('a', 'first'), prompt('b', body, ['a'])]);
+    expect(issues.some((i) => i.rule === 'content.var.unknown')).toBe(false);
+  });
+
+  // Multiple distinct unknown refs in one body → multiple issues.
+  it('emits one issue per distinct unknown {{var}} ref', () => {
+    const body = 'a: {{ids.ghost1.output.x}}, b: {{ids.ghost2.output.y}}';
+    const issues = runContentRules([prompt('a', 'first'), prompt('b', body, ['a'])]).filter(
+      (i) => i.rule === 'content.var.unknown',
+    );
+    expect(issues.length).toBeGreaterThanOrEqual(2);
+    const ids = new Set(
+      issues.map((i) => i.message.match(/"([^"]+)"/)?.[1]).filter(Boolean) as string[],
+    );
+    expect(ids.has('ghost1')).toBe(true);
+    expect(ids.has('ghost2')).toBe(true);
+  });
+
+  // Nested-field body coverage: approval.message must be scanned.
+  it('scans approval.message for unknown {{var}} refs', () => {
+    const approvalNode = {
+      id: 'b',
+      approval: { message: 'confirm? {{ids.ghost.output.value}}' },
+      depends_on: ['a'],
+    } as unknown as DagNode;
+    const issues = runContentRules([prompt('a', 'first'), approvalNode]);
+    expect(issues.some((i) => i.rule === 'content.var.unknown' && i.path.nodeId === 'b')).toBe(
+      true,
+    );
+  });
+
+  // Nested-field body coverage: loop.prompt must be scanned.
+  it('scans loop.prompt for unknown {{var}} refs', () => {
+    const loopNode = {
+      id: 'b',
+      loop: { prompt: 'iterate {{ids.ghost.output.value}}', until: 'done', max_iterations: 5 },
+      depends_on: ['a'],
+    } as unknown as DagNode;
+    const issues = runContentRules([prompt('a', 'first'), loopNode]);
+    expect(issues.some((i) => i.rule === 'content.var.unknown' && i.path.nodeId === 'b')).toBe(
+      true,
+    );
+  });
+
+  // id-with-dashes is valid (the regex's [\w-]* allows it).
+  it('accepts ids with dashes in {{ids.X.Y}} refs', () => {
+    const issues = runContentRules([
+      prompt('node-a', 'first'),
+      prompt('b', 'use {{ids.node-a.output.value}}', ['node-a']),
+    ]);
+    expect(issues).toEqual([]);
+  });
 });

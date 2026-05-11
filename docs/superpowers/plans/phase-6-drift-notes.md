@@ -249,12 +249,23 @@ user content:
 | `command` | CommandNode | yes |
 | `bash` | BashNode | yes |
 | `script` | ScriptNode | yes |
-| `cancel` | CancelNode | yes |
 | `approval.message` | ApprovalNode | yes (nested) |
 | `loop.prompt` | LoopNode | yes (nested) |
 | `when` | all variants | **no** — condition expression |
 | `loop.until` | LoopNode | **no** — condition expression |
 | `loop.max_iterations` | LoopNode | **no** — numeric config |
+| `cancel` | CancelNode | **no** — free-form prose (see below) |
+
+**On `cancel` (post-review, Task 6.3 follow-up):** Initially scoped in, then
+removed after reviewing Archon executor behavior. `cancel: string` on
+`CancelNode` is a termination reason shown when the workflow aborts (see
+`.research/archon-workflows.md` §3.7). There is no evidence the Archon
+executor interpolates `{{ids...}}` references inside cancel reasons — it's
+free-form prose, not a templated body. Including it risked spurious warnings
+on cancel messages that legitimately mention node ids in prose
+(e.g., `"User aborted: classify said no"`). Under-scanning is preferred to
+over-warning; the rule (codified in `bodyText`'s maintainer comment) is to
+add a field only when there's evidence the executor interpolates it.
 
 ---
 
