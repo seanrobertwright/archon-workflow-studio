@@ -61,3 +61,39 @@ describe('Toolbar Save gate', () => {
     expect(saveBtn).toBeNull();
   });
 });
+
+describe('Toolbar — YAML toggle', () => {
+  it('does not render the YAML button when onToggleYamlPreview is omitted', () => {
+    render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    expect(screen.queryByRole('button', { name: /yaml/i })).toBeNull();
+  });
+
+  it('renders a pressed YAML button when isYamlPreviewOpen is true', () => {
+    render(
+      <Toolbar
+        workflowName="w"
+        onResetLayout={() => {}}
+        isYamlPreviewOpen={true}
+        onToggleYamlPreview={() => {}}
+      />,
+    );
+    const btn = screen.getByRole('button', { name: /yaml/i });
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('clicking the YAML button calls onToggleYamlPreview', () => {
+    let count = 0;
+    render(
+      <Toolbar
+        workflowName="w"
+        onResetLayout={() => {}}
+        isYamlPreviewOpen={false}
+        onToggleYamlPreview={() => {
+          count++;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /yaml/i }));
+    expect(count).toBe(1);
+  });
+});

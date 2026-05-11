@@ -7,6 +7,10 @@ export interface ToolbarProps {
   hasErrors?: boolean;
   /** Up to 3 error messages shown in the Save button's title tooltip. */
   topErrors?: readonly string[];
+  /** When true, the YAML toggle button renders pressed. */
+  isYamlPreviewOpen?: boolean;
+  /** When provided, renders the YAML toggle button. */
+  onToggleYamlPreview?: () => void;
 }
 
 export function Toolbar({
@@ -15,6 +19,8 @@ export function Toolbar({
   onSave,
   hasErrors,
   topErrors = [],
+  isYamlPreviewOpen,
+  onToggleYamlPreview,
 }: ToolbarProps) {
   return (
     <header
@@ -42,6 +48,23 @@ export function Toolbar({
       >
         Reset layout
       </button>
+      {onToggleYamlPreview ? (
+        <button
+          type="button"
+          aria-pressed={!!isYamlPreviewOpen}
+          onClick={onToggleYamlPreview}
+          style={{
+            background: isYamlPreviewOpen ? 'var(--studio-accent, #7c3aed)' : 'transparent',
+            color: isYamlPreviewOpen ? '#fff' : 'var(--studio-fg)',
+            border: '1px solid var(--studio-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '4px 8px',
+            cursor: 'pointer',
+          }}
+        >
+          YAML
+        </button>
+      ) : null}
       {onSave ? (
         <button
           type="button"

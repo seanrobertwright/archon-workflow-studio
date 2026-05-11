@@ -6,6 +6,7 @@ import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
 
 beforeEach(() => {
   useBuilderStore.getState().clearWorkflow();
+  useBuilderStore.getState().setYamlPreviewOpen(false);
   globalThis.localStorage?.clear();
 });
 
@@ -128,5 +129,39 @@ describe('WorkflowBuilder', () => {
       />,
     );
     expect(container.querySelector('[data-testid="validation-drawer"]')).not.toBeNull();
+  });
+
+  it('right column shows NodeInspector by default and YamlPreviewDrawer when toggled', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'n', description: 'd', base: {}, unknown: {} },
+      nodes: [{ id: 'a', variant: 'prompt', data: { prompt: 'x' }, base: {}, unknown: {} }],
+    });
+    const { container, rerender } = render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd=""
+        workflowName="n"
+      />,
+    );
+    expect(container.querySelector('[data-pane="inspector"]')).toBeTruthy();
+    expect(container.querySelector('[data-pane="yaml-preview"]')).toBeNull();
+
+    act(() => {
+      useBuilderStore.getState().setYamlPreviewOpen(true);
+    });
+    rerender(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd=""
+        workflowName="n"
+      />,
+    );
+    expect(container.querySelector('[data-pane="inspector"]')).toBeNull();
+    expect(container.querySelector('[data-pane="yaml-preview"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="validation-drawer"]')).toBeTruthy();
   });
 });

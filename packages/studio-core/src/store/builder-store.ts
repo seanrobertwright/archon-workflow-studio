@@ -145,6 +145,8 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
       selectedNodeId: null,
       focusedIssue: null,
       baselineYaml: null,
+      hoveredNodeId: null,
+      isYamlPreviewOpen: false,
     }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),

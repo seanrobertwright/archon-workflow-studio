@@ -12,6 +12,7 @@ import { Canvas } from './Canvas';
 import { NodeLibrary } from './NodeLibrary';
 import { NodeInspector } from './inspector/NodeInspector';
 import { Toolbar } from './Toolbar';
+import { YamlPreviewDrawer } from './preview/YamlPreviewDrawer';
 import { StudioErrorBoundary } from './StudioErrorBoundary';
 import { ValidationPanel } from './ValidationPanel';
 import { useValidation } from '../validation/useValidation';
@@ -49,6 +50,8 @@ function WorkflowBuilderInner({
   onSave?: () => void;
 }) {
   const storeName = useBuilderStore((s) => s.workflow?.name ?? workflowName);
+  const isYamlOpen = useBuilderStore((s) => s.isYamlPreviewOpen);
+  const setYamlOpen = useBuilderStore((s) => s.setYamlPreviewOpen);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const { issues, isValidating, focusIssue } = useValidation();
 
@@ -71,6 +74,8 @@ function WorkflowBuilderInner({
           onSave={onSave}
           hasErrors={hasErrors}
           topErrors={topErrors}
+          isYamlPreviewOpen={isYamlOpen}
+          onToggleYamlPreview={() => setYamlOpen(!isYamlOpen)}
         />
       </div>
       <div className={styles.library}>
@@ -81,8 +86,8 @@ function WorkflowBuilderInner({
           <Canvas />
         </ReactFlowProvider>
       </main>
-      <div className={styles.inspector}>
-        <NodeInspector />
+      <div className={styles.inspector} data-pane={isYamlOpen ? 'yaml-preview' : 'inspector'}>
+        {isYamlOpen ? <YamlPreviewDrawer /> : <NodeInspector />}
       </div>
       <section className={styles.drawer} data-testid="validation-drawer">
         <ValidationPanel
