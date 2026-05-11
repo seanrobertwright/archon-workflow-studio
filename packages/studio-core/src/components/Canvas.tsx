@@ -38,6 +38,7 @@ export function Canvas() {
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   const setSelectedNodeId = useBuilderStore((s) => s.setSelectedNodeId);
+  const selectedNodeId = useBuilderStore((s) => s.selectedNodeId);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -124,6 +125,31 @@ export function Canvas() {
     },
     [persistOnNodesChange],
   );
+
+  // Sync store-driven selection (e.g., from ValidationPanel row click) into
+  // ReactFlow's per-node `selected` flag AND pan the node into view. Without
+  // this, clicking a panel row updates the inspector but the canvas gives no
+  // visual feedback — the node may even be offscreen.
+  useEffect(() => {
+    setRfNodes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        const shouldBe = n.id === selectedNodeId;
+        if (!!n.selected === shouldBe) return n;
+        changed = true;
+        return { ...n, selected: shouldBe };
+      });
+      return changed ? next : prev;
+    });
+    if (selectedNodeId) {
+      const node = reactFlow.getNode(selectedNodeId);
+      if (node) {
+        const cx = node.position.x + (node.measured?.width ?? 150) / 2;
+        const cy = node.position.y + (node.measured?.height ?? 40) / 2;
+        reactFlow.setCenter(cx, cy, { duration: 300, zoom: reactFlow.getZoom() });
+      }
+    }
+  }, [selectedNodeId, reactFlow]);
 
   const onConnect = useMemo(() => makeOnConnect(connect), [connect]);
   const onEdgesDelete = useMemo(() => makeOnEdgesDelete(disconnect), [disconnect]);
