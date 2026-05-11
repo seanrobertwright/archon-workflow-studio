@@ -7,7 +7,7 @@
 | Phase 4 — NodeInspector + variant inspectors + cascading rename                          | ✅      | ✅       | ✅       |
 | Phase 5 — Visual `when:` builder + autocomplete                                          | ✅      | ✅       | ✅       |
 | Phase 6 — Validation pipeline + ValidationPanel                                          | ✅      | ✅       | ✅       |
-| Phase 7 — YAML preview pane                                                              | ✅      | ✅       | ❌       |
+| Phase 7 — YAML preview pane                                                              | ✅      | ✅       | ✅       |
 | Phase 8 — Editor polish (undo/redo, multi-select, copy/paste, theme picker)              | ❌      | ❌       | ❌       |
 | Phase 9 — Connected mode complete (connect, list, save)                                  | ❌      | ❌       | ❌       |
 | Phase 10 — Tests + drift CI + docs + release polish                                      | ❌      | ❌       | ❌       |
@@ -110,6 +110,67 @@ isValidating, focusIssue }` into the store; memoized return + idempotent
 Verification: 382/382 tests pass (up from 318; +64 new) · all packages
 build · typecheck green · lint 0 errors · format clean · schema-drift
 clean · grammar-drift clean.
+
+## Phase 7 — completion notes
+
+All 11 tasks (7.0 reality check → 7.9 verify) landed on branch
+`phase-7`; tag + push to origin pending user. The drift cheat sheet at
+`docs/superpowers/plans/phase-7-drift-notes.md` records 8 plan-vs-code
+deviations — most are environment quirks (Bun `mock.module` scope,
+CSS Modules name mangling, JSDOM cleanup, Zustand snapshot timing).
+The plan's architecture survived intact.
+
+Phase 7 deliverables shipped:
+
+- `exporter/serializeYaml.ts` — pure serializer producing canonical
+  Archon-shape YAML + per-node `{ id, startLine, endLine }` source map
+  (round-trip-parsed via `LineCounter` to recover positions); type-only
+  import of `LoadWorkflowInput` to avoid runtime cycle once
+  `builder-store.ts` calls it
+- `components/preview/yamlPreviewExtensions.ts` — CM6 building blocks:
+  `yamlLanguage`, `yamlSearch`, `readOnlyExt` (both `EditorState.readOnly`
+  - `EditorView.editable`), `pickIdAtLine`, `rangesField` + `setRanges`,
+    `targetsField` + `setHighlightTargets`, `highlightField` (a
+    `StateField<DecorationSet>` recomputing from ranges + targets), and
+    `domEventLineHandler` (stable, reads ranges from state at click time)
+- `components/preview/YamlPreview.tsx` — thin adapter over `CmEditor`
+  that dispatches `setRanges`/`setHighlightTargets` effects on prop
+  changes and `scrollIntoView` on selection
+- `components/preview/YamlPreview.module.css` — `:global(...)` rules for
+  the line-decoration classes CM6 injects directly into the DOM
+- `components/preview/YamlPreviewDrawer.tsx` — header (title, "may
+  differ" note, Copy + Download buttons, conditional Modified pill),
+  reads `selectedNodeId`/`hoveredNodeId`/`baselineYaml` from store
+- `components/preview/yamlDiffBadge.ts` — `isModified(current, baseline)`
+- `inspector/shared/CmEditor.tsx` — extended with a `Compartment` for
+  live extension reconfig and an `onCreate?: (view: EditorView) => void`
+  hook (Task 7.0.5 — preconditions for Tasks 7.3/7.6)
+- `store/builder-store.ts` — `hoveredNodeId` + `setHoveredNodeId`,
+  `isYamlPreviewOpen` + `setYamlPreviewOpen`, `baselineYaml` seeded by
+  `loadWorkflow` via `serializeYaml`; `clearWorkflow` extended to null
+  all three for clean-state semantics
+- `Toolbar.tsx` — YAML toggle button (between Reset layout and Save,
+  rendered only when `onToggleYamlPreview` provided, `aria-pressed`
+  bound to `isYamlPreviewOpen`)
+- `WorkflowBuilder.tsx` — right column slot becomes single-occupancy:
+  `isYamlOpen ? <YamlPreviewDrawer /> : <NodeInspector />`; bottom
+  validation drawer (`data-testid="validation-drawer"`) untouched
+- `Canvas.tsx` — `onNodeMouseEnter`/`onNodeMouseLeave` write
+  `hoveredNodeId`; existing `onNodeClick` selection unchanged
+- New deps: `@codemirror/lang-yaml@^6.1`, `@codemirror/search@^6.7`
+
+Verification: 440/440 tests pass (up from 382; +58 new — 7
+serializeYaml + 22 fixture round-trip + 5 CmEditor compartment + 9
+YamlPreview + 4 store slice + 4 Toolbar/swap + 3 canvas hover + 5
+drawer header + 2 e2e wiring, plus minor adjustments) · all packages
+build (standalone bundle 1031kB → 1100kB, ~69kB for CM6 lang-yaml +
+search) · typecheck green · lint 0 errors · format clean ·
+schema-drift clean · grammar-drift clean.
+
+Manual smoke (Step 1 of 7.9) deferred — user should run
+`bun --filter='@archon-studio/standalone' run dev` post-merge to
+visually confirm decorations, scroll-into-view, search overlay, and
+download flow.
 
 ## Phase 7 — planning notes
 
