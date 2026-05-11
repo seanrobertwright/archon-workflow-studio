@@ -21,8 +21,8 @@ describe('<VariantPicker>', () => {
   });
 
   it('renders the current variant as the trigger label', () => {
-    const { getByText } = render(<VariantPicker />);
-    expect(getByText(/bash/i)).toBeTruthy();
+    const { getByRole } = render(<VariantPicker />);
+    expect((getByRole('combobox') as HTMLSelectElement).value).toBe('bash');
   });
 
   it('selecting a different variant opens a confirm modal', () => {
