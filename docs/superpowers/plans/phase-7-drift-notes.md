@@ -163,20 +163,77 @@ in `afterEach`, not just `beforeEach`.
 
 ---
 
-## Drift 7.9.1 — Manual smoke (Step 1) deferred
+## Drift 7.9.1 — Manual smoke caught three real bugs the test suite missed
 
-**Plan called for:** loading `_smoke-pi-all-nodes.yaml` in the standalone
-app and manually clicking through the drawer, copy, download, modified
-pill, and Ctrl+F search.
+The user ran the 11-step smoke against the running dev server.
+Steps 1, 3, 4, 5, 6, 8, 9, 11 passed on the first build. **Three real bugs
+surfaced that no automated test caught**, each shipped in its own
+follow-up commit:
 
-**Reality:** the agent execution was non-interactive — no browser
-session. The automated test surface (440 unit + integration tests,
-including the e2e wiring spec against the same smoke fixture and the
-21-fixture serializer round-trip) provides equivalent confidence for the
-non-visual paths. **Recommended follow-up:** the user runs the manual
-smoke against `bun --filter='@archon-studio/standalone' run dev` to
-visually confirm decorations, scroll-into-view, search overlay, and
-download flow before merging `phase-7` to `main`.
+### Bug A — no syntax highlighting in the preview (commit `de70e4b`)
+
+`@codemirror/lang-yaml` ships only the parser/tokenizer, not a highlight
+style. Without `syntaxHighlighting(defaultHighlightStyle, { fallback: true })`
+from `@codemirror/language`, CM6 produces tokens but paints them in the
+default foreground color — looks like plain monospace text.
+
+Fix: added the missing extension to `previewBaseExtensions()` and added
+`@codemirror/language@^6` as a direct dep (it was not hoisted from
+`lang-yaml`).
+
+**How to apply:** any future CM6 surface that wants colored syntax must
+install BOTH a language extension AND a highlight-style extension.
+"Lang-only" is not enough.
+
+### Bug B — drawer layout broken: no scroll, buttons unstyled (commit `de70e4b`)
+
+The plan referenced className strings like `yaml-preview-drawer`,
+`yaml-preview-drawer__header`, `yaml-preview-drawer__actions` but never
+provided CSS for them. The drawer rendered as unstyled inline flow:
+"CopyDownload" ran together with no separator, the editor host had no
+height constraint so the right column overflowed without a scrollbar.
+
+Fix: created `YamlPreviewDrawer.css` (plain `.css`, side-effect import)
+with a flex column layout — header `flex: 0 0 auto`, editor host
+`flex: 1 1 auto` with `min-height: 0`, `.cm-scroller` set to `overflow: auto`,
+header gets padding + button gaps + h2 sizing.
+
+**How to apply:** when a plan invents className strings, verify the CSS
+is also part of the deliverable. The Phase-7 plan provided the JSX but
+implicitly left styling "tiny on purpose" — that left a hole.
+
+### Bug C — Ctrl+F opens browser search, not CM6 search panel (commit `8a9e1c9`)
+
+`EditorView.editable.of(false)` sets `contenteditable="false"` on
+`.cm-content`. As a side effect, that element also drops out of the tab
+order — so a click on the preview does not focus the editor, and
+keydown events never reach the installed `searchKeymap`. Ctrl+F bubbles
+to the browser's native find.
+
+Fix: `EditorView.contentAttributes.of({ tabindex: '0' })` restores
+focusability without making the surface editable.
+
+**How to apply:** any read-only-but-still-keyboard-driven CM6 view needs
+explicit `tabindex` on `.cm-content`. The combo "readOnly + non-editable
++ keymap" requires three facets, not two.
+
+### Meta-lesson
+
+Three bugs survived 440 automated tests because they're all UX-layer
+issues that JSDOM-rendered tests don't surface:
+
+- JSDOM does not paint, so missing colors aren't visible.
+- Grid/flex layout breakage doesn't fail assertions unless you measure
+  layout (which we don't).
+- Browser keystrokes vs editor keystrokes — JSDOM doesn't run a real
+  event loop where Ctrl+F competes with the browser.
+
+**How to apply:** treat the manual smoke as load-bearing for any
+visual-or-keyboard-input feature, not as a nice-to-have. Phase 8's
+undo/redo, theme picker, multi-select will all need the same gate.
+
+After fixes: all 11 smoke steps pass. 440/440 automated tests still
+green.
 
 ---
 
