@@ -61,11 +61,15 @@ export function useValidation(): UseValidationResult {
 
   // Subscribe to engine notifications via useSyncExternalStore.
   // snapshot() is referentially stable per drift 6.4.5 — safe to pass directly.
-  const snapshot = useSyncExternalStore(
-    (onStoreChange) => engine.subscribe(onStoreChange),
-    () => engine.snapshot(),
-    () => engine.snapshot(), // getServerSnapshot (same value — drift 6.5.5)
+  // subscribe is wrapped in useCallback so its identity is stable across renders;
+  // an unstable subscribe causes useSyncExternalStore to re-subscribe on every
+  // render, and combined with strict-mode mount/unmount can churn.
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => engine.subscribe(onStoreChange),
+    [engine],
   );
+  const getSnapshot = useCallback(() => engine.snapshot(), [engine]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   // Store selectors — use getState() to avoid creating new refs each render.
   const nodes = useBuilderStore((s) => s.nodes);
@@ -90,12 +94,18 @@ export function useValidation(): UseValidationResult {
   }, [engine, nodes, workflow]);
 
   // Dispose the engine when this component unmounts.
+  // Deps are `[]` (not `[engine]`) so React StrictMode's mount/cleanup/remount
+  // cycle does not churn the engine: if [engine] were the dep and the cleanup
+  // nulled engineRef.current, the next render's lazy-init would create engine2,
+  // the effect would see a new dep, fire cleanup, null the ref, and so on
+  // forever. The empty deps guarantee this effect runs only on real mount/
+  // unmount, with the cleanup reading engineRef.current at unmount time.
   useEffect(() => {
     return () => {
-      engine.dispose();
+      engineRef.current?.dispose();
       engineRef.current = null;
     };
-  }, [engine]);
+  }, []);
 
   // focusIssue: push selectedNodeId + focusedIssue into the store.
   // Wrapped in useCallback with stable deps so downstream memoisation works.
