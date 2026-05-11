@@ -4,6 +4,20 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { Toolbar } from '../../src/components/Toolbar';
 import { useBuilderStore } from '../../src/store/builder-store';
 import { useUndoStore } from '../../src/store/undo-store';
+import { PositionProvider } from '../../src/hooks/PositionContext';
+import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
+import type { ReactNode } from 'react';
+
+const mockPositions: UsePositionPersistence = {
+  positions: new Map(),
+  setPosition: () => {},
+  setMany: () => {},
+  reset: () => {},
+};
+
+function WithPositions({ children }: { children: ReactNode }) {
+  return <PositionProvider value={mockPositions}>{children}</PositionProvider>;
+}
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -21,13 +35,17 @@ describe('Toolbar undo/redo buttons', () => {
       past: [{ label: 'Align left', nodes: [], workflow: null, positions: {} }],
       future: [],
     });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     expect(getByLabelText('Undo: Align left')).toBeTruthy();
   });
 
   it('undo button disabled when stack empty', () => {
     useUndoStore.setState({ past: [], future: [] });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     expect(getByLabelText('Undo').hasAttribute('disabled')).toBe(true);
   });
 
@@ -36,13 +54,17 @@ describe('Toolbar undo/redo buttons', () => {
       past: [],
       future: [{ label: 'Delete nodes', nodes: [], workflow: null, positions: {} }],
     });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     expect(getByLabelText('Redo: Delete nodes')).toBeTruthy();
   });
 
   it('redo button disabled when future stack empty', () => {
     useUndoStore.setState({ past: [], future: [] });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     expect(getByLabelText('Redo').hasAttribute('disabled')).toBe(true);
   });
 
@@ -51,14 +73,18 @@ describe('Toolbar undo/redo buttons', () => {
       past: [{ label: 'add node', nodes: [], workflow: null, positions: {} }],
       future: [],
     });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     expect(getByLabelText('Undo: add node').hasAttribute('disabled')).toBe(false);
   });
 
   it('clicking undo button calls applyUndo (pops past stack)', () => {
     const snap = { label: 'add node', nodes: [], workflow: null, positions: {} };
     useUndoStore.setState({ past: [snap], future: [] });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     fireEvent.click(getByLabelText('Undo: add node'));
     // After undo, snap moves to future
     const { past, future } = useUndoStore.getState();
@@ -70,7 +96,9 @@ describe('Toolbar undo/redo buttons', () => {
   it('clicking redo button calls applyRedo (pops future stack)', () => {
     const snap = { label: 'add node', nodes: [], workflow: null, positions: {} };
     useUndoStore.setState({ past: [], future: [snap] });
-    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    const { getByLabelText } = render(<Toolbar workflowName="w" onResetLayout={() => {}} />, {
+      wrapper: WithPositions,
+    });
     fireEvent.click(getByLabelText('Redo: add node'));
     // After redo, snap moves to past
     const { past, future } = useUndoStore.getState();

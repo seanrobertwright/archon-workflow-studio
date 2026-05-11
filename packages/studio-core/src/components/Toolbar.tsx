@@ -1,6 +1,7 @@
 import { ThemePicker } from './ThemePicker';
 import { useBuilderStore } from '../store/builder-store';
 import { useUndoStore } from '../store/undo-store';
+import { usePositionContext } from '../hooks/PositionContext';
 
 export interface ToolbarProps {
   workflowName: string;
@@ -40,6 +41,15 @@ export function Toolbar({
   const undoLabel = useUndoStore((s) => s.nextUndoLabel());
   const redoLabel = useUndoStore((s) => s.nextRedoLabel());
   const hasSelection = selectedNodeIds.length >= 2;
+  const positionCtx = usePositionContext();
+
+  function syncPositionsBeforeOp() {
+    useBuilderStore.getState().setManyPositions(positionCtx.positions);
+  }
+
+  function syncPositionsAfterOp() {
+    positionCtx.setMany(Object.entries(useBuilderStore.getState().positions));
+  }
 
   return (
     <header
@@ -58,7 +68,10 @@ export function Toolbar({
         aria-label={undoLabel ? `Undo: ${undoLabel}` : 'Undo'}
         title={undoLabel ? `Undo: ${undoLabel}` : 'Undo'}
         disabled={!undoLabel}
-        onClick={applyUndo}
+        onClick={() => {
+          applyUndo();
+          syncPositionsAfterOp();
+        }}
         style={{
           background: 'transparent',
           color: 'var(--studio-fg)',
@@ -75,7 +88,10 @@ export function Toolbar({
         aria-label={redoLabel ? `Redo: ${redoLabel}` : 'Redo'}
         title={redoLabel ? `Redo: ${redoLabel}` : 'Redo'}
         disabled={!redoLabel}
-        onClick={applyRedo}
+        onClick={() => {
+          applyRedo();
+          syncPositionsAfterOp();
+        }}
         style={{
           background: 'transparent',
           color: 'var(--studio-fg)',
@@ -106,7 +122,11 @@ export function Toolbar({
           <button
             type="button"
             aria-label="Align left"
-            onClick={() => alignSelection('left')}
+            onClick={() => {
+              syncPositionsBeforeOp();
+              alignSelection('left');
+              syncPositionsAfterOp();
+            }}
             style={{
               background: 'transparent',
               color: 'var(--studio-fg)',
@@ -121,7 +141,11 @@ export function Toolbar({
           <button
             type="button"
             aria-label="Align right"
-            onClick={() => alignSelection('right')}
+            onClick={() => {
+              syncPositionsBeforeOp();
+              alignSelection('right');
+              syncPositionsAfterOp();
+            }}
             style={{
               background: 'transparent',
               color: 'var(--studio-fg)',
@@ -136,7 +160,11 @@ export function Toolbar({
           <button
             type="button"
             aria-label="Align top"
-            onClick={() => alignSelection('top')}
+            onClick={() => {
+              syncPositionsBeforeOp();
+              alignSelection('top');
+              syncPositionsAfterOp();
+            }}
             style={{
               background: 'transparent',
               color: 'var(--studio-fg)',
@@ -151,7 +179,11 @@ export function Toolbar({
           <button
             type="button"
             aria-label="Align bottom"
-            onClick={() => alignSelection('bottom')}
+            onClick={() => {
+              syncPositionsBeforeOp();
+              alignSelection('bottom');
+              syncPositionsAfterOp();
+            }}
             style={{
               background: 'transparent',
               color: 'var(--studio-fg)',
@@ -168,7 +200,11 @@ export function Toolbar({
               <button
                 type="button"
                 aria-label="Distribute horizontally"
-                onClick={() => distributeSelection('h')}
+                onClick={() => {
+                  syncPositionsBeforeOp();
+                  distributeSelection('h');
+                  syncPositionsAfterOp();
+                }}
                 style={{
                   background: 'transparent',
                   color: 'var(--studio-fg)',
@@ -183,7 +219,11 @@ export function Toolbar({
               <button
                 type="button"
                 aria-label="Distribute vertically"
-                onClick={() => distributeSelection('v')}
+                onClick={() => {
+                  syncPositionsBeforeOp();
+                  distributeSelection('v');
+                  syncPositionsAfterOp();
+                }}
                 style={{
                   background: 'transparent',
                   color: 'var(--studio-fg)',
@@ -200,7 +240,11 @@ export function Toolbar({
           <button
             type="button"
             aria-label="Auto arrange"
-            onClick={() => autoArrangeSelection()}
+            onClick={() => {
+              syncPositionsBeforeOp();
+              autoArrangeSelection();
+              syncPositionsAfterOp();
+            }}
             style={{
               background: 'transparent',
               color: 'var(--studio-fg)',

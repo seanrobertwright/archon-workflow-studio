@@ -4,6 +4,20 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { Toolbar } from '../../src/components/Toolbar';
 import { useBuilderStore } from '../../src/store/builder-store';
 import { useUndoStore, resetCoalesceState } from '../../src/store/undo-store';
+import { PositionProvider } from '../../src/hooks/PositionContext';
+import type { UsePositionPersistence } from '../../src/hooks/usePositionPersistence';
+import type { ReactNode } from 'react';
+
+const mockPositions: UsePositionPersistence = {
+  positions: new Map(),
+  setPosition: () => {},
+  setMany: () => {},
+  reset: () => {},
+};
+
+function WithPositions({ children }: { children: ReactNode }) {
+  return <PositionProvider value={mockPositions}>{children}</PositionProvider>;
+}
 
 beforeAll(() => {
   if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -21,6 +35,7 @@ describe('Toolbar Save gate', () => {
         hasErrors={true}
         topErrors={['Error A', 'Error B']}
       />,
+      { wrapper: WithPositions },
     );
     const saveBtn = screen.getByRole('button', { name: /save/i });
     expect(saveBtn.hasAttribute('disabled')).toBe(true);
@@ -36,6 +51,7 @@ describe('Toolbar Save gate', () => {
         hasErrors={false}
         topErrors={[]}
       />,
+      { wrapper: WithPositions },
     );
     const saveBtn = screen.getByRole('button', { name: /save/i });
     expect(saveBtn.hasAttribute('disabled')).toBe(false);
@@ -52,13 +68,14 @@ describe('Toolbar Save gate', () => {
         }}
         hasErrors={false}
       />,
+      { wrapper: WithPositions },
     );
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     expect(called).toBe(true);
   });
 
   it('omits the Save button entirely when onSave is undefined', () => {
-    render(<Toolbar workflowName="test" onResetLayout={() => {}} />);
+    render(<Toolbar workflowName="test" onResetLayout={() => {}} />, { wrapper: WithPositions });
     const saveBtn = screen.queryByRole('button', { name: /save/i });
     expect(saveBtn).toBeNull();
   });
@@ -66,7 +83,7 @@ describe('Toolbar Save gate', () => {
 
 describe('Toolbar — YAML toggle', () => {
   it('does not render the YAML button when onToggleYamlPreview is omitted', () => {
-    render(<Toolbar workflowName="w" onResetLayout={() => {}} />);
+    render(<Toolbar workflowName="w" onResetLayout={() => {}} />, { wrapper: WithPositions });
     expect(screen.queryByRole('button', { name: /yaml/i })).toBeNull();
   });
 
@@ -78,6 +95,7 @@ describe('Toolbar — YAML toggle', () => {
         isYamlPreviewOpen={true}
         onToggleYamlPreview={() => {}}
       />,
+      { wrapper: WithPositions },
     );
     const btn = screen.getByRole('button', { name: /yaml/i });
     expect(btn.getAttribute('aria-pressed')).toBe('true');
@@ -94,6 +112,7 @@ describe('Toolbar — YAML toggle', () => {
           count++;
         }}
       />,
+      { wrapper: WithPositions },
     );
     fireEvent.click(screen.getByRole('button', { name: /yaml/i }));
     expect(count).toBe(1);
@@ -130,7 +149,21 @@ describe('<Toolbar> alignment buttons', () => {
   });
 
   it('align left button triggers alignLeft on selection', () => {
-    render(<Toolbar workflowName="test" onResetLayout={() => {}} />);
+    const posMap = new Map([
+      ['a', { x: 10, y: 30 }],
+      ['b', { x: 50, y: 10 }],
+    ]);
+    const testPositions: UsePositionPersistence = {
+      positions: posMap,
+      setPosition: () => {},
+      setMany: () => {},
+      reset: () => {},
+    };
+    render(<Toolbar workflowName="test" onResetLayout={() => {}} />, {
+      wrapper: ({ children }) => (
+        <PositionProvider value={testPositions}>{children}</PositionProvider>
+      ),
+    });
     const btn = screen.getByLabelText('Align left');
     fireEvent.click(btn);
     const { positions } = useBuilderStore.getState();

@@ -88,7 +88,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.paste,
     (e) => {
       e.preventDefault();
-      void pasteClipboard();
+      void pasteClipboard().then(() => {
+        positions.setMany(Object.entries(useBuilderStore.getState().positions));
+      });
     },
     hotkeyOptions,
   );
@@ -110,7 +112,7 @@ function WorkflowBuilderInner({
   );
   useHotkeys(SHORTCUTS.clearSelection, () => clearSelection(), hotkeyOptions);
   useHotkeys(
-    SHORTCUTS.delete as string[],
+    SHORTCUTS.delete as unknown as string[],
     (e) => {
       e.preventDefault();
       removeSelected();
@@ -121,7 +123,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.alignLeft,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       alignSelection('left');
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -129,7 +133,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.alignRight,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       alignSelection('right');
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -137,7 +143,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.alignTop,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       alignSelection('top');
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -145,7 +153,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.alignBottom,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       alignSelection('bottom');
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -153,7 +163,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.autoArrangeSelection,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       autoArrangeSelection();
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -169,7 +181,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.undo,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       applyUndo();
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );
@@ -177,7 +191,9 @@ function WorkflowBuilderInner({
     SHORTCUTS.redo,
     (e) => {
       e.preventDefault();
+      useBuilderStore.getState().setManyPositions(positions.positions);
       applyRedo();
+      positions.setMany(Object.entries(useBuilderStore.getState().positions));
     },
     hotkeyOptions,
   );

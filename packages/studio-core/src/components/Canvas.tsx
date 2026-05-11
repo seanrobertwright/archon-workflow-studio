@@ -41,6 +41,7 @@ export function Canvas() {
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   const setSelection = useBuilderStore((s) => s.setSelection);
+  const addToSelection = useBuilderStore((s) => s.addToSelection);
   const clearSelection = useBuilderStore((s) => s.clearSelection);
   const primarySelectionId = useBuilderStore((s) => s.primarySelectionId);
   const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
@@ -205,7 +206,13 @@ export function Canvas() {
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete}
         onNodesDelete={onNodesDelete}
-        onNodeClick={(_, node) => setSelection([node.id])}
+        onNodeClick={(event, node) => {
+          if (event.shiftKey) {
+            addToSelection(node.id);
+          } else {
+            setSelection([node.id]);
+          }
+        }}
         onPaneClick={() => clearSelection()}
         onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}

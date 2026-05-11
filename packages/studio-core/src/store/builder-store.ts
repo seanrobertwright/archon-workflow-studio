@@ -100,6 +100,7 @@ export interface BuilderState {
   gridSnap: boolean;
 
   setNodePosition: (id: string, x: number, y: number) => void;
+  setManyPositions: (entries: Iterable<[string, { x: number; y: number }]>) => void;
   setActiveGuides: (guides: Guide[]) => void;
   toggleGridSnap: () => void;
 
@@ -208,6 +209,11 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     gridSnap: false,
 
     setNodePosition: (id, x, y) => set((s) => ({ positions: { ...s.positions, [id]: { x, y } } })),
+    setManyPositions: (entries) => {
+      const update: Record<string, { x: number; y: number }> = {};
+      for (const [id, pos] of entries) update[id] = pos;
+      set((s) => ({ positions: { ...s.positions, ...update } }));
+    },
     setActiveGuides: (guides) => set({ activeGuides: guides }),
     toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
 
@@ -570,7 +576,7 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     },
 
     alignSelection: (direction) => {
-      const { nodes, selectedNodeIds, positions, workflow } = get();
+      const { selectedNodeIds, positions } = get();
       if (selectedNodeIds.length < 2) return;
 
       const NODE_W = 200,
@@ -596,7 +602,7 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     },
 
     distributeSelection: (axis) => {
-      const { nodes, selectedNodeIds, positions, workflow } = get();
+      const { selectedNodeIds, positions } = get();
       if (selectedNodeIds.length < 3) return;
 
       const NODE_W = 200,
