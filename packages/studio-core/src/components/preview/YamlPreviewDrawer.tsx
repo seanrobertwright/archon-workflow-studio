@@ -9,6 +9,7 @@ export function YamlPreviewDrawer() {
   const selectedNodeId = useBuilderStore((s) => s.selectedNodeId);
   const hoveredNodeId = useBuilderStore((s) => s.hoveredNodeId);
   const setSelected = useBuilderStore((s) => s.setSelectedNodeId);
+  const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
 
   const result = useMemo(() => {
     if (!meta) return { yaml: '', sourceMap: [] };
@@ -27,6 +28,7 @@ export function YamlPreviewDrawer() {
         selectedNodeId={selectedNodeId}
         hoveredNodeId={hoveredNodeId}
         onLinePick={(id) => setSelected(id)}
+        onLineHover={(id) => setHoveredNodeId(id)}
       />
     </div>
   );

@@ -39,6 +39,7 @@ export function Canvas() {
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
   const setSelectedNodeId = useBuilderStore((s) => s.setSelectedNodeId);
   const selectedNodeId = useBuilderStore((s) => s.selectedNodeId);
+  const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -199,6 +200,8 @@ export function Canvas() {
         onNodesDelete={onNodesDelete}
         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
         onPaneClick={() => setSelectedNodeId(null)}
+        onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView
         proOptions={{ hideAttribution: true }}
       >
