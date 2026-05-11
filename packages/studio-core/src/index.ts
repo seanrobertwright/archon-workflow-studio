@@ -32,3 +32,6 @@ export { ThemePicker } from './components/ThemePicker';
 
 export { useValidation } from './validation/useValidation';
 export type { UseValidationResult } from './validation/useValidation';
+
+export { serializeClipboard, parseClipboard } from './clipboard';
+export type { ClipboardEnvelope } from './clipboard';

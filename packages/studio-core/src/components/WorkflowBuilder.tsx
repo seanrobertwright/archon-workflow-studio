@@ -1,6 +1,7 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
 
 import { ApiClientProvider } from '../api/ApiClientProvider';
 import { ThemeProvider, type ThemePreset } from '../theme/ThemeProvider';
@@ -16,6 +17,7 @@ import { YamlPreviewDrawer } from './preview/YamlPreviewDrawer';
 import { StudioErrorBoundary } from './StudioErrorBoundary';
 import { ValidationPanel } from './ValidationPanel';
 import { useValidation } from '../validation/useValidation';
+import { SHORTCUTS } from '../shortcuts';
 import styles from './WorkflowBuilder.module.css';
 
 export interface WorkflowBuilderProps {
@@ -59,6 +61,57 @@ function WorkflowBuilderInner({
   const setYamlOpen = useBuilderStore((s) => s.setYamlPreviewOpen);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const { issues, isValidating, focusIssue } = useValidation();
+
+  const copySelection = useBuilderStore((s) => s.copySelection);
+  const pasteClipboard = useBuilderStore((s) => s.pasteClipboard);
+  const cutSelection = useBuilderStore((s) => s.cutSelection);
+  const removeSelected = useBuilderStore((s) => s.removeSelected);
+  const selectAll = useBuilderStore((s) => s.selectAll);
+  const clearSelection = useBuilderStore((s) => s.clearSelection);
+
+  const hotkeyOptions = { enableOnFormTags: false, enableOnContentEditable: false } as const;
+
+  useHotkeys(
+    SHORTCUTS.copy,
+    (e) => {
+      e.preventDefault();
+      void copySelection();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.paste,
+    (e) => {
+      e.preventDefault();
+      void pasteClipboard();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.cut,
+    (e) => {
+      e.preventDefault();
+      void cutSelection();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(
+    SHORTCUTS.selectAll,
+    (e) => {
+      e.preventDefault();
+      selectAll();
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(SHORTCUTS.clearSelection, () => clearSelection(), hotkeyOptions);
+  useHotkeys(
+    SHORTCUTS.delete as string[],
+    (e) => {
+      e.preventDefault();
+      removeSelected();
+    },
+    hotkeyOptions,
+  );
 
   const hasErrors = useMemo(() => issues.some((i) => i.severity === 'error'), [issues]);
   const topErrors = useMemo(

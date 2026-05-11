@@ -70,3 +70,38 @@ describe('copySelection + pasteClipboard', () => {
     expect(useUndoStore.getState().past.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('cutSelection', () => {
+  beforeEach(() => {
+    resetCoalesceState();
+    useBuilderStore.setState({
+      nodes: [makeNode('a'), makeNode('b')],
+      selectedNodeIds: ['a'],
+      primarySelectionId: 'a',
+      positions: { a: { x: 0, y: 0 }, b: { x: 100, y: 0 } },
+    });
+    useUndoStore.setState({ past: [], future: [] });
+  });
+  afterEach(() => {
+    useBuilderStore.setState({
+      nodes: [],
+      selectedNodeIds: [],
+      primarySelectionId: null,
+      positions: {},
+      clipboard: null,
+    });
+    useUndoStore.setState({ past: [], future: [] });
+  });
+
+  it('cutSelection copies then removes selected nodes', async () => {
+    await useBuilderStore.getState().cutSelection();
+    expect(useBuilderStore.getState().nodes).toHaveLength(1); // only 'b' remains
+    expect(useBuilderStore.getState().nodes[0].id).toBe('b');
+  });
+
+  it('cutSelection then paste restores node with new id', async () => {
+    await useBuilderStore.getState().cutSelection();
+    await useBuilderStore.getState().pasteClipboard();
+    expect(useBuilderStore.getState().nodes).toHaveLength(2); // b + pasted a-copy
+  });
+});
