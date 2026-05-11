@@ -6,8 +6,8 @@
 | Phase 3 — NodeLibrary + per-variant Renderers + snippets                                 | ✅      | ✅       | ✅       |
 | Phase 4 — NodeInspector + variant inspectors + cascading rename                          | ✅      | ✅       | ✅       |
 | Phase 5 — Visual `when:` builder + autocomplete                                          | ✅      | ✅       | ✅       |
-| Phase 6 — Validation pipeline + ValidationPanel                                          | ✅      | ❌       | ❌       |
-| Phase 7 — YAML preview pane                                                              | ❌      | ❌       | ❌       |
+| Phase 6 — Validation pipeline + ValidationPanel                                          | ✅      | ✅       | ✅       |
+| Phase 7 — YAML preview pane                                                              | ✅      | ✅       | ❌       |
 | Phase 8 — Editor polish (undo/redo, multi-select, copy/paste, theme picker)              | ❌      | ❌       | ❌       |
 | Phase 9 — Connected mode complete (connect, list, save)                                  | ❌      | ❌       | ❌       |
 | Phase 10 — Tests + drift CI + docs + release polish                                      | ❌      | ❌       | ❌       |
@@ -78,3 +78,66 @@ Phase 5 deliverables shipped:
 Verification: 318/318 tests pass · all packages build · typecheck green ·
 lint 0 errors · format clean · schema-drift clean · grammar-drift clean
 (in sync with Archon @ `fd6d75e7`).
+
+## Phase 6 — completion notes
+
+All Phase 6 tasks (6.0 reality check → 6.10 verify) landed on branch
+`phase-6`; tag + push to origin pending. The drift cheat sheet at
+`docs/superpowers/plans/phase-6-drift-notes.md` records 24 plan-vs-code
+deviations — most are `DagNode` flat-shape adaptations against the
+inherited Phase 4/5 schemas plus one engine race fix.
+
+Phase 6 deliverables shipped:
+
+- `validation/types.ts` — shared `Issue` model + tier enum
+- `validation/rules/structural.ts` — instant-tier rules (empty ids,
+  variant missing, duplicate ids, malformed `depends_on`)
+- `validation/rules/graph.ts` — debounced-tier rules (cycle detection,
+  `depends_on` reference integrity, both self- and dual-cycle covered)
+- `validation/rules/content.ts` — debounced-tier `when:` grammar + `{{var}}`
+  scan reusing `lib/grammar.ts` and `transitiveUpstream` from Phase 5
+- `validation/engine.ts` — three-tier orchestrator with 300ms debounce,
+  `AbortController`, and monotonic sequence guard against stale server responses
+- `validation/useValidation.ts` — React hook plumbing `{ issues, hasErrors,
+isValidating, focusIssue }` into the store; memoized return + idempotent
+  `setFocusedIssue`
+- `builder-store` — `focusedIssue` slice + `loadWorkflow` resets
+- `WorkflowBuilder` — bottom drawer row in the grid hosting `ValidationPanel`
+- `ValidationPanel` — collapsible issue list with click-to-focus
+- `Toolbar` — `onSave` Save button gated by `hasErrors` (with top-3 error
+  tooltip on disabled hover)
+
+Verification: 382/382 tests pass (up from 318; +64 new) · all packages
+build · typecheck green · lint 0 errors · format clean · schema-drift
+clean · grammar-drift clean.
+
+## Phase 7 — planning notes
+
+Spec + plan landed before execution:
+
+- `docs/superpowers/specs/2026-05-10-phase-7-yaml-preview-design.md`
+  captures the four scope decisions (toggleable right drawer in the
+  inspector slot; bidirectional click + hover cross-highlight; always
+  re-serialize from in-memory workflow; all four extras — copy,
+  download, modified-vs-baseline badge, Ctrl+F search), the module map,
+  source-map model, and the deviation from the v1 sketch's
+  `highlight.js` choice in favor of reusing the Phase-5 `CmEditor` (CM6)
+  primitive.
+- `docs/superpowers/plans/2026-05-10-phase-7-yaml-preview.md` decomposes
+  the work into 11 bite-sized tasks (7.0 reality check, 7.0.5 `CmEditor`
+  Compartment + `onCreate` prep, 7.1 `serializeYaml`, 7.2 fixture
+  round-trip, 7.3 `YamlPreview` + StateField decorations, 7.4 store
+  slice, 7.5 Toolbar toggle + WorkflowBuilder swap, 7.6 canvas hover
+  wiring, 7.7 drawer header extras, 7.8 e2e wiring smoke, 7.9 verify +
+  drift + tag).
+
+Plan went through one independent review pass: 4 BLOCKER + 6 MAJOR
+issues caught and folded in. Key corrections recorded in the plan's
+"Review history" section — most notably the `CmEditor` mount-once
+limitation (resolved via `Compartment` in new Task 7.0.5) and the
+rewrite of decorations from a broken `EditorView.decorations.compute`
+pattern to a canonical `StateField<DecorationSet>` driven by
+`StateEffect`s.
+
+Test target: 382 → ~434 (32 behavioral + ~20 per-fixture round-trip).
+Execute on branch `phase-7` cut from `main` after Phase 6 is tagged.
