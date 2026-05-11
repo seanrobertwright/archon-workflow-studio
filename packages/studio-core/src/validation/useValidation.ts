@@ -16,10 +16,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { ValidationEngine, type EngineSnapshot } from './engine';
-import { useBuilderStore, type IssuePath } from '../store/builder-store';
+import { useBuilderStore } from '../store/builder-store';
 import { useWorkflowApi } from '../api/ApiClientProvider';
 import { toWorkflowDefinition } from '../exporter/toWorkflowDefinition';
 import type { DagNode, WorkflowDefinition } from '../schemas';
+import type { Issue } from './types';
 
 export interface UseValidationResult extends EngineSnapshot {
   /** True if any issue has severity === 'error'. */
@@ -29,7 +30,7 @@ export interface UseValidationResult extends EngineSnapshot {
    * Sets selectedNodeId (so the canvas focuses the node) and focusedIssue
    * (so the inspector tab can scroll to the relevant field).
    */
-  focusIssue: (path: IssuePath) => void;
+  focusIssue: (issue: Issue) => void;
 }
 
 export function useValidation(): UseValidationResult {
@@ -99,12 +100,12 @@ export function useValidation(): UseValidationResult {
   // focusIssue: push selectedNodeId + focusedIssue into the store.
   // Wrapped in useCallback with stable deps so downstream memoisation works.
   const focusIssue = useCallback(
-    (path: IssuePath) => {
+    (issue: Issue) => {
       const { setSelectedNodeId, setFocusedIssue } = useBuilderStore.getState();
-      if (path.nodeId !== undefined) {
-        setSelectedNodeId(path.nodeId);
+      if (issue.path.nodeId !== undefined) {
+        setSelectedNodeId(issue.path.nodeId);
       }
-      setFocusedIssue(path);
+      setFocusedIssue(issue.path);
     },
     [], // no deps — reads from getState() which is always current
   );

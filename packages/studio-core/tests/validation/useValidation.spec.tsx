@@ -123,7 +123,14 @@ describe('useValidation', () => {
     });
     renderProbe((s) => (last = s));
     act(() => {
-      last!.focusIssue({ nodeId: 'step1', field: 'prompt' });
+      last!.focusIssue({
+        id: 'i',
+        rule: 'structural.required.prompt',
+        severity: 'error',
+        source: 'client-instant',
+        message: '',
+        path: { nodeId: 'step1', field: 'prompt' },
+      });
     });
     const storeState = useBuilderStore.getState();
     expect(storeState.selectedNodeId).toBe('step1');

@@ -42,7 +42,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Severity pills in bar */
@@ -52,9 +54,15 @@
   border-radius: 4px;
 }
 
-.pill_error  { color: #f87171; }
-.pill_warning { color: #fbbf24; }
-.pill_info   { color: #60a5fa; }
+.pill_error {
+  color: #f87171;
+}
+.pill_warning {
+  color: #fbbf24;
+}
+.pill_info {
+  color: #60a5fa;
+}
 
 /* Expanded body */
 .body {
@@ -132,9 +140,15 @@
   flex-shrink: 0;
 }
 
-.row_error   .sev { color: #f87171; }
-.row_warning .sev { color: #fbbf24; }
-.row_info    .sev { color: #60a5fa; }
+.row_error .sev {
+  color: #f87171;
+}
+.row_warning .sev {
+  color: #fbbf24;
+}
+.row_info .sev {
+  color: #60a5fa;
+}
 
 .rule {
   font-size: 10px;
