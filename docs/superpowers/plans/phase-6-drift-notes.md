@@ -744,3 +744,61 @@ Node-level structural issues without a `field` (e.g., `structural.id.empty`, `st
 **Plan:** "The standalone app currently doesn't pass [onSave], so Save button stays off there for now — that's fine."
 
 **Reality:** The standalone entry point (`packages/studio-app/src/App.tsx` or similar) was not modified. `WorkflowBuilder` renders without `onSave`, so the Save button does not appear in the standalone dev UI. This is intentional per the plan; the prop chain (`WorkflowBuilder.onSave → WorkflowBuilderInner.onSave → Toolbar.onSave`) is in place for callers that DO provide `onSave` (e.g., the embedded Archon integration or future E2E tests).
+
+---
+
+## Drift 6.9.1 — StubArchonApiClient not used; inline stub instead
+
+**Plan:** `import { StubArchonApiClient } from '@archon-studio/api-archon'` with `new StubArchonApiClient()`.
+
+**Reality (two issues):**
+1. `@archon-studio/api-archon` is not a `devDependency` of `@archon-studio/core`. Importing it in the test would be a phantom dependency — not listed in `package.json`, only works by accident of monorepo hoisting.
+2. `StubArchonApiClient` requires a `loadFixture` option and would throw without it.
+
+**What shipped:** Inline `noopClient` literal (identical pattern to `WorkflowBuilder.spec.tsx` and `useValidation.spec.tsx`). The server tier is exercised by the engine's `validateWorkflow` call through this client; it returns `{ valid: true }` so server issues don't interfere with the cycle-detection assertions.
+
+---
+
+## Drift 6.9.2 — WorkflowMeta requires `base: {}` and `unknown: {}`
+
+**Plan:** `meta: { name: 'w', description: '' }` — missing `base` and `unknown`.
+
+**Reality:** `WorkflowMeta` interface (builder-store.ts line 38–43) requires `base: Record<string, unknown>` and `unknown: Record<string, unknown>`. The TypeScript compiler would reject the plan's shape, and the `toWorkflowDefinition` exporter spreads both.
+
+**What shipped:** `meta: { name: 'w', description: '', base: {}, unknown: {} }`. Consistent with drift 6.5.2 precedent.
+
+---
+
+## Drift 6.9.3 — `depends_on` lives under `BuilderNode.base`, not at node root
+
+**Plan:** `{ id: 'a', type: 'prompt', base: { prompt: 'x' }, depends_on: ['b'] }` — `depends_on` at root, wrong variant shape.
+
+**Reality:** `BuilderNode` stores all base-field edges under `node.base`. `toWorkflowDefinition` spreads `n.base` flat into the DagNode (exporter line 16), making `depends_on` visible to `runGraphRules`.
+
+**What shipped:**
+```ts
+{ id: 'a', variant: 'prompt', data: { prompt: 'x' }, base: { depends_on: ['b'] }, unknown: {} }
+```
+
+---
+
+## Drift 6.9.4 — Panel starts collapsed; cycle text not in DOM until expanded
+
+**Plan:** `await waitFor(() => expect(screen.getByText(/cycle/i)).toBeTruthy())` — assumes the cycle message text is in the DOM immediately.
+
+**Reality:** `WorkflowBuilderInner` initialises `drawerExpanded = false` (line 52). `ValidationPanel` renders issue message text only when `expanded={true}` (line 55–103). In collapsed state, only the Pill count summary ("2 errors") is rendered.
+
+**What shipped:** Two-step assertion:
+1. `waitFor` on `screen.getByText(/2 errors/i)` — confirms validation has settled (pill always rendered in collapsed bar).
+2. `fireEvent.click(screen.getByRole('button', { name: /expand validation panel/i }))` — expands the panel.
+3. `screen.getAllByText(/cycle/i)` — confirms cycle message in expanded list.
+
+Both the rule name (`graph.cycle`) and the message text (`is part of a cycle in depends_on.`) match `/cycle/i`, so `getAllByText` is used instead of `getByText` to avoid the "found multiple elements" error. The `.length > 0` assertion is sufficient.
+
+---
+
+## Drift 6.9.5 — `beforeAll` GlobalRegistrator guard is a no-op (setup.ts preloads it)
+
+**Plan:** `beforeAll(() => { if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register(); })`.
+
+**Reality:** `tests/setup.ts` (preloaded via `bun test --preload`) registers happy-dom before any test module loads. The `beforeAll` guard in the test file is redundant but harmless — retained for self-documentation consistency with other spec files.
