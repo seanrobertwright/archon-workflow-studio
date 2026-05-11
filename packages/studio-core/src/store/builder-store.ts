@@ -536,13 +536,37 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
       set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
 
     applyUndo: () => {
-      const snap = useUndoStore.getState().undo();
-      if (snap) get().applySnapshot(snap);
+      const undoStore = useUndoStore.getState();
+      if (undoStore.past.length === 0) return;
+      // Capture current (post-action) state — this becomes the redo target
+      const { nodes, positions, workflow } = get();
+      const label = undoStore.past[undoStore.past.length - 1].label;
+      const snap = undoStore.undo()!; // moves pre-action snap: past → future
+      // Replace the future-top (pre-action) with current (post-action) so redo restores forward
+      useUndoStore.setState((s) => ({
+        future: [
+          { label, workflow: workflow ?? null, nodes: [...nodes], positions: { ...positions } },
+          ...s.future.slice(1),
+        ],
+      }));
+      get().applySnapshot(snap);
     },
 
     applyRedo: () => {
-      const snap = useUndoStore.getState().redo();
-      if (snap) get().applySnapshot(snap);
+      const undoStore = useUndoStore.getState();
+      if (undoStore.future.length === 0) return;
+      // Capture current (pre-redo) state — this becomes the undo target
+      const { nodes, positions, workflow } = get();
+      const label = undoStore.future[0].label;
+      const snap = undoStore.redo()!; // moves post-action snap: future → past
+      // Replace the past-top (post-action) with current (pre-redo) so undo can reverse
+      useUndoStore.setState((s) => ({
+        past: [
+          ...s.past.slice(0, -1),
+          { label, workflow: workflow ?? null, nodes: [...nodes], positions: { ...positions } },
+        ],
+      }));
+      get().applySnapshot(snap);
     },
 
     alignSelection: (direction) => {

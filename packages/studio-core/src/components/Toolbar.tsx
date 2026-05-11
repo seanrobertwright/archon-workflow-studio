@@ -56,6 +56,7 @@ export function Toolbar({
       <button
         type="button"
         aria-label={undoLabel ? `Undo: ${undoLabel}` : 'Undo'}
+        title={undoLabel ? `Undo: ${undoLabel}` : 'Undo'}
         disabled={!undoLabel}
         onClick={applyUndo}
         style={{
@@ -72,6 +73,7 @@ export function Toolbar({
       <button
         type="button"
         aria-label={redoLabel ? `Redo: ${redoLabel}` : 'Redo'}
+        title={redoLabel ? `Redo: ${redoLabel}` : 'Redo'}
         disabled={!redoLabel}
         onClick={applyRedo}
         style={{
