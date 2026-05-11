@@ -87,3 +87,43 @@ describe('single node', () => {
     expect(result.a.x).toBe(rects.a.x);
   });
 });
+
+import { distributeH, distributeV } from '../src/alignment';
+
+describe('distributeH', () => {
+  it('equalizes horizontal gaps', () => {
+    const rectsH = {
+      a: { x: 0, y: 0, w: 20, h: 20 },
+      b: { x: 100, y: 0, w: 20, h: 20 },
+      c: { x: 60, y: 0, w: 20, h: 20 },
+    };
+    const result = distributeH(rectsH);
+    // sorted by x: a(0), c(60), b(100)
+    // total span: 0 to 120 = 120; each item w=20; gap = (120 - 3*20) / 2 = 30
+    // a stays at 0, c moves to 50 (0+20+30), b moves to 100 (50+20+30)
+    const sorted = Object.entries(result).sort(([, pa], [, pb]) => pa.x - pb.x);
+    const gaps = sorted.slice(1).map(([id, p], i) => {
+      const prev = sorted[i];
+      return p.x - (prev[1].x + rectsH[prev[0] as keyof typeof rectsH].w);
+    });
+    // all gaps equal
+    expect(Math.abs(gaps[0] - gaps[1])).toBeLessThan(0.01);
+  });
+});
+
+describe('distributeV', () => {
+  it('equalizes vertical gaps', () => {
+    const rectsV = {
+      a: { x: 0, y: 0, w: 20, h: 20 },
+      b: { x: 0, y: 100, w: 20, h: 20 },
+      c: { x: 0, y: 60, w: 20, h: 20 },
+    };
+    const result = distributeV(rectsV);
+    const sorted = Object.entries(result).sort(([, pa], [, pb]) => pa.y - pb.y);
+    const gaps = sorted.slice(1).map(([id, p], i) => {
+      const prev = sorted[i];
+      return p.y - (prev[1].y + rectsV[prev[0] as keyof typeof rectsV].h);
+    });
+    expect(Math.abs(gaps[0] - gaps[1])).toBeLessThan(0.01);
+  });
+});
