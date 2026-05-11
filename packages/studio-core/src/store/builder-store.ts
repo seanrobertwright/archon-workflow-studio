@@ -125,7 +125,10 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   loadWorkflow: ({ meta, nodes }) => set({ workflow: meta, nodes }),
   clearWorkflow: () => set({ workflow: null, nodes: [], selectedNodeId: null, focusedIssue: null }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
-  setFocusedIssue: (path) => set({ focusedIssue: path }),
+  // Reference-equality guard: prevents spurious notifications when the panel
+  // re-clicks the same row (the same path reference) — Zustand would otherwise
+  // notify on every set() even with an identical payload.
+  setFocusedIssue: (path) => set((s) => (s.focusedIssue === path ? s : { focusedIssue: path })),
 
   setWorkflowName: (name) => set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
   setWorkflowDescription: (description) =>

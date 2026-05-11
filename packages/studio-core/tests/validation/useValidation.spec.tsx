@@ -79,6 +79,40 @@ describe('useValidation', () => {
     expect(last!.issues.some((i) => i.rule === 'structural.id.empty')).toBe(true);
   });
 
+  it('invokes the server tier on first render when client + definition are present', async () => {
+    // Regression guard for drift 6.5.7: the engine must have a client at
+    // construction time so the very first engine.update() (triggered by the
+    // `[nodes, workflow]` effect on first render) can dispatch to the server
+    // tier. If the client were injected via a post-mount useEffect declared
+    // AFTER the [nodes, workflow] effect, the first update would run with
+    // this.client === undefined and silently skip the server tier.
+    let called = false;
+    const trackingClient = {
+      validateWorkflow: async () => {
+        called = true;
+        return { valid: true };
+      },
+    } as unknown as WorkflowApiClient;
+
+    act(() => {
+      useBuilderStore.getState().loadWorkflow({
+        meta: { name: 'w', description: '', base: {}, unknown: {} },
+        nodes: [{ id: 'a', variant: 'prompt', data: { prompt: 'hi' }, base: {}, unknown: {} }],
+      });
+    });
+    render(
+      <ApiClientProvider client={trackingClient}>
+        <Probe onState={() => {}} />
+      </ApiClientProvider>,
+    );
+    // Default engine debounceMs is 300; give it 400ms to fire the debounced tier
+    // followed by the server tier.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(called).toBe(true);
+  });
+
   it('focusIssue sets selectedNodeId and focusedIssue in the store', () => {
     let last: ReturnType<typeof useValidation> | null = null;
     act(() => {

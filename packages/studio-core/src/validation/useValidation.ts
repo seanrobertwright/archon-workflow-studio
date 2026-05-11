@@ -14,7 +14,7 @@
  *    definition so both debounced and server tiers are skipped (drift 6.5.3).
  */
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { ValidationEngine, type EngineSnapshot } from './engine';
 import { useBuilderStore, type IssuePath } from '../store/builder-store';
 import { useWorkflowApi } from '../api/ApiClientProvider';
@@ -72,8 +72,9 @@ export function useValidation(): UseValidationResult {
 
   // Re-run engine.update whenever nodes or workflow changes.
   // BuilderNode[] → DagNode[] via toWorkflowDefinition (drift 6.5.2).
-  // When workflow is null the engine receives empty nodes and no definition,
-  // so the server tier is never invoked.
+  // Note: if workflow is null, all nodes are skipped — this is intentional for the
+  // load-then-clear lifecycle, but means addNode-before-loadWorkflow paths (currently
+  // none exist) would silently skip validation. Reconsider if that lifecycle changes.
   useEffect(() => {
     const definition = workflow ? toWorkflowDefinition({ meta: workflow, nodes }) : undefined;
     // definition.nodes is the flat DagNode-shaped array produced by toDag().
@@ -108,9 +109,19 @@ export function useValidation(): UseValidationResult {
     [], // no deps — reads from getState() which is always current
   );
 
-  return {
-    ...snapshot,
-    hasErrors: snapshot.issues.some((i) => i.severity === 'error'),
-    focusIssue,
-  };
+  // Memoise the returned object so consumers observe referential stability
+  // matching the engine's snapshot stability (drift 6.4.5). Without this, every
+  // parent re-render would hand consumers a fresh object literal, defeating
+  // memoisation downstream (ValidationPanel, Save gate).
+  // `snapshot` is stable-by-reference (engine memoizes); `focusIssue` is stable
+  // via useCallback([], []). So this object becomes a new reference only when
+  // validation state actually changes.
+  return useMemo(
+    () => ({
+      ...snapshot,
+      hasErrors: snapshot.issues.some((i) => i.severity === 'error'),
+      focusIssue,
+    }),
+    [snapshot, focusIssue],
+  );
 }
