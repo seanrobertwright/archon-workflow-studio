@@ -55,12 +55,14 @@ describe('phase-8 integration round-trips', () => {
 
     // copy then paste → 4 nodes
     await useBuilderStore.getState().copySelection();
+    expect(useBuilderStore.getState().clipboard).not.toBeNull();
     await useBuilderStore.getState().pasteClipboard();
     expect(useBuilderStore.getState().nodes).toHaveLength(4);
 
     // undo → 2 nodes (paste undone)
     useBuilderStore.getState().applyUndo();
     expect(useBuilderStore.getState().nodes).toHaveLength(2);
+    expect(useUndoStore.getState().past).toHaveLength(0);
 
     // redo → 4 nodes (paste redone)
     useBuilderStore.getState().applyRedo();
@@ -78,25 +80,24 @@ describe('phase-8 integration round-trips', () => {
       positions: {},
     });
 
-    const store = useBuilderStore.getState;
-
     // setSelection(['a', 'b']) → selectedNodeIds = ['a', 'b'], primarySelectionId = 'b'
-    store().setSelection(['a', 'b']);
+    useBuilderStore.getState().setSelection(['a', 'b']);
     expect(useBuilderStore.getState().selectedNodeIds).toEqual(['a', 'b']);
     expect(useBuilderStore.getState().primarySelectionId).toBe('b');
 
     // addToSelection('c') → length 3, primary = 'c'
-    store().addToSelection('c');
+    useBuilderStore.getState().addToSelection('c');
     expect(useBuilderStore.getState().selectedNodeIds).toHaveLength(3);
     expect(useBuilderStore.getState().primarySelectionId).toBe('c');
 
     // removeFromSelection('b') → length 2, primary = 'c'
-    store().removeFromSelection('b');
+    useBuilderStore.getState().removeFromSelection('b');
     expect(useBuilderStore.getState().selectedNodeIds).toHaveLength(2);
     expect(useBuilderStore.getState().primarySelectionId).toBe('c');
+    expect(useBuilderStore.getState().selectedNodeIds).toEqual(['a', 'c']);
 
     // clearSelection() → empty
-    store().clearSelection();
+    useBuilderStore.getState().clearSelection();
     expect(useBuilderStore.getState().selectedNodeIds).toHaveLength(0);
     expect(useBuilderStore.getState().primarySelectionId).toBeNull();
   });
@@ -164,6 +165,7 @@ describe('phase-8 integration round-trips', () => {
     resetCoalesceState(); // ensure snapshot is pushed
     useBuilderStore.getState().convertVariant('node1', 'command');
     expect(useBuilderStore.getState().nodes[0].variant).toBe('command');
+    expect(useUndoStore.getState().past.length).toBeGreaterThanOrEqual(1);
 
     // applyUndo → variant = 'bash'
     useBuilderStore.getState().applyUndo();
@@ -193,6 +195,8 @@ describe('phase-8 integration round-trips', () => {
     const posAfterAlign = useBuilderStore.getState().positions;
     expect(posAfterAlign['p'].x).toBe(50);
     expect(posAfterAlign['q'].x).toBe(50);
+    expect(posAfterAlign['p'].y).toBe(10);
+    expect(posAfterAlign['q'].y).toBe(20);
 
     // applyUndo → positions restored
     useBuilderStore.getState().applyUndo();
