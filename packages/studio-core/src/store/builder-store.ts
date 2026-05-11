@@ -46,15 +46,32 @@ export interface LoadWorkflowInput {
   nodes: BuilderNode[];
 }
 
+/**
+ * Lightweight path descriptor for the focused validation issue.
+ * Intentionally NOT imported from `validation/types` to avoid a circular
+ * dependency: builder-store → validation/types → (nothing) would be fine,
+ * but having the UI layer depend on validation internals through the store
+ * creates an undesirable coupling. This local type is structurally identical
+ * to `IssuePath` in validation/types (drift 6.5 — local alias).
+ */
+export interface IssuePath {
+  nodeId?: string;
+  field?: string;
+  atomIndex?: number;
+}
+
 export interface BuilderState {
   workflow: WorkflowMeta | null;
   nodes: BuilderNode[];
   /** Currently-inspected node id. Driven by Canvas selection (wired in Task 60). */
   selectedNodeId: string | null;
+  /** The validation issue path currently focused in the panel. Drives inspector tab routing. */
+  focusedIssue: IssuePath | null;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
   setSelectedNodeId: (id: string | null) => void;
+  setFocusedIssue: (path: IssuePath | null) => void;
 
   setWorkflowName: (name: string) => void;
   setWorkflowDescription: (description: string) => void;
@@ -103,10 +120,12 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   workflow: null,
   nodes: [],
   selectedNodeId: null,
+  focusedIssue: null,
 
   loadWorkflow: ({ meta, nodes }) => set({ workflow: meta, nodes }),
-  clearWorkflow: () => set({ workflow: null, nodes: [], selectedNodeId: null }),
+  clearWorkflow: () => set({ workflow: null, nodes: [], selectedNodeId: null, focusedIssue: null }),
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setFocusedIssue: (path) => set({ focusedIssue: path }),
 
   setWorkflowName: (name) => set((s) => (s.workflow ? { workflow: { ...s.workflow, name } } : s)),
   setWorkflowDescription: (description) =>

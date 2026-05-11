@@ -19,4 +19,12 @@ export { NodeInspector } from './components/inspector/NodeInspector';
 export { fromWorkflowDefinition } from './exporter/fromWorkflowDefinition';
 export { toWorkflowDefinition } from './exporter/toWorkflowDefinition';
 export { useBuilderStore } from './store/builder-store';
-export type { BuilderState, WorkflowMeta, LoadWorkflowInput } from './store/builder-store';
+export type {
+  BuilderState,
+  WorkflowMeta,
+  LoadWorkflowInput,
+  IssuePath,
+} from './store/builder-store';
+
+export { useValidation } from './validation/useValidation';
+export type { UseValidationResult } from './validation/useValidation';

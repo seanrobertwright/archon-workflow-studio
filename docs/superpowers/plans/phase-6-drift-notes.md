@@ -423,3 +423,179 @@ at which point it returns a fresh reference once and caches it.
   (I2) — avoids flicker between server resolve and a queued debounce.
 - Comment near server-issue construction notes the `|`-separator issueId
   caveat for unconstrained server messages (M3).
+
+---
+
+## Drift 6.5.1 — API client export is named `useWorkflowApi`, not `useApiClient`
+
+**Plan assumed:** `useApiClient()` hook from `ApiClientProvider.tsx`.
+
+**Reality:** The export is `useWorkflowApi(): WorkflowApiClient`. It throws
+(`'useWorkflowApi must be used inside <ApiClientProvider>'`) when called
+outside a provider. The plan's `useApiClient` does not exist.
+
+**What shipped:** All references to `useApiClient` were replaced with
+`useWorkflowApi`. Every render in the test spec is wrapped in
+`<ApiClientProvider client={stubClient}>` since the hook is non-optional.
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.2 — BuilderNode → DagNode conversion via `toWorkflowDefinition`
+
+**Plan assumed:** `engine.update({ nodes })` where `nodes` is the raw
+`BuilderNode[]` from the store. This fails — the engine expects `DagNode[]`
+(flat shape), not `BuilderNode[]` (with `variant`, `data`, `base`, `unknown`
+wrappers).
+
+**Reality:** `toWorkflowDefinition({ meta, nodes })` returns
+`Record<string, unknown>` where `result.nodes` is an array of flat DagNode-
+shaped objects produced by each variant's `toDag()` method. This is the
+correct conversion path.
+
+**What shipped in `useValidation.ts`:**
+```ts
+const definition = workflow ? toWorkflowDefinition({ meta: workflow, nodes }) : undefined;
+const dagNodes = (definition ? (definition.nodes as unknown[]) : []) as readonly DagNode[];
+engine.update({ nodes: dagNodes, definition: definition as unknown as WorkflowDefinition });
+```
+
+When `workflow === null` (empty store), `definition` is `undefined`, `dagNodes`
+is `[]`, and the server tier is never invoked (correct behavior for a clean slate).
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.3 — `toWorkflowDefinition` return type is `Record<string, unknown>`, not `WorkflowDefinition`
+
+**Plan:** passed `definition` typed as `WorkflowDefinition` to `engine.update`.
+
+**Reality:** `toWorkflowDefinition` returns `Record<string, unknown>`. The engine
+does not introspect `definition` — it only forwards it to
+`client.validateWorkflow`. The type loosening is acceptable; a cast through
+`unknown` is used at the call site.
+
+**What shipped:** `definition as unknown as WorkflowDefinition` at the
+`engine.update` call site. Documented at the call site in a comment.
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.4 — Test fixtures required BuilderNode shape, not DagNode raw shape
+
+**Plan's test fixture:**
+```ts
+nodes: [{ id: '', type: 'prompt', base: { prompt: 'x' } } as never]
+```
+This is the DagNode/wrong shape. `loadWorkflow` stores it verbatim, then
+`toWorkflowDefinition` calls `getVariant(n.variant).toDag(n.data)` — `n.variant`
+is `undefined`, which throws or produces garbage.
+
+**What shipped:**
+```ts
+nodes: [{ id: '', variant: 'prompt', data: { prompt: 'x' }, base: {}, unknown: {} }]
+```
+This is the correct `BuilderNode` shape. It flows through `toWorkflowDefinition`
+cleanly: `getVariant('prompt').toDag({ prompt: 'x' })` → `{ prompt: 'x' }`, and the
+empty `id` is preserved through the `{ id: n.id, ...variantPart, ... }` spread,
+triggering `structural.id.empty` correctly.
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.5 — Snapshot stability confirmed; `getServerSnapshot` added
+
+**`engine.snapshot()` returns the same reference between notifications** (drift
+6.4.5). Passing `() => engine.snapshot()` directly to `useSyncExternalStore`
+is safe.
+
+**Additional:** A `getServerSnapshot` argument was added (same as `getSnapshot`)
+to avoid React SSR typing issues. This matches the `useSyncExternalStore` API's
+three-argument form: `subscribe, getSnapshot, getServerSnapshot`.
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.6 — Engine lifecycle: one per mount, StrictMode-safe
+
+**What shipped:** `useRef` lazy initializer pattern:
+```ts
+const engineRef = useRef<ValidationEngine | null>(null);
+if (!engineRef.current) engineRef.current = new ValidationEngine({});
+```
+A separate `useEffect(() => () => { engine.dispose(); engineRef.current = null; }, [engine])`
+disposes on unmount. In StrictMode (mount → unmount → remount), dispose fires
+on the first unmount; the remount creates a fresh engine via the `if (!engineRef.current)`
+guard. No zombie engines are possible.
+
+The `engineRef.current = null` assignment in the cleanup ensures the ref is
+cleared so the guard re-runs on the StrictMode remount.
+
+**Anticipated by dispatch:** Yes.
+
+---
+
+## Drift 6.5.7 — `engine.client` set via private field cast (not-anticipated)
+
+**The plan** implied passing the `client` to `ValidationEngine`'s constructor
+options: `new ValidationEngine({ client })`. However, the client must be injected
+after mount (it comes from `useWorkflowApi`, a React hook that can't be called
+before the component renders). Passing it only at construction time works for
+the happy path, but the ValidationEngine constructor's `client` option maps
+to a private field `this.client`.
+
+**What shipped:** A `useEffect` sets the engine's internal client field via a
+validated private cast:
+```ts
+(engine as unknown as { client: typeof client }).client = client;
+```
+This is an intentional private-field-access pattern (well-known in TypeScript
+test/integration code). The alternative — adding a public `setClient(c)` method
+to `ValidationEngine` — was considered but rejected to keep the engine interface
+minimal and avoid exposing mutation surface to consumers other than the hook.
+
+**Simpler alternative considered:** pass `client` directly to `new ValidationEngine({ client })`
+inside the `useRef` lazy initializer block, then skip the `useEffect`. This works
+but means the engine is created once with whatever client is current at first-
+render time. If `useWorkflowApi` ever returns a different client reference on
+re-render, the engine would hold a stale one. The `useEffect` injection is
+future-proof, though this distinction doesn't matter in Phase 6 (client is
+stable across the WorkflowBuilder lifetime).
+
+**Follow-up:** If this hack offends, add `setClient(c: WorkflowApiClient): void`
+to `ValidationEngine` in a future PR.
+
+---
+
+## Drift 6.5.8 — `IssuePath` local alias in builder-store (not-anticipated)
+
+**Plan stated:** add `focusedIssue: IssuePath | null` to `BuilderState` where
+`IssuePath` is imported from `validation/types`.
+
+**Reality:** Importing `validation/types` from `builder-store` creates a
+coupling from the store (which is used everywhere) to the validation layer. The
+plan noted "DON'T import from `validation/types`" in the store slice description
+but omitted the local alias in the interface.
+
+**What shipped:** A local `IssuePath` type alias was added to `builder-store.ts`
+with a doc comment explaining the intentional non-import:
+```ts
+export interface IssuePath {
+  nodeId?: string;
+  field?: string;
+  atomIndex?: number;
+}
+```
+This is structurally identical to `validation/types.IssuePath`. The store
+exports `IssuePath` so `useValidation.ts` can import it from the store (not
+from `validation/types`), avoiding the circular dependency
+`validation/useValidation → validation/types → (fine)` vs. the reverse
+`builder-store → validation/types → (tight coupling)`.
+
+**Anticipated by dispatch:** Partially (the "don't import" part was noted but the
+local alias solution wasn't spelled out).
