@@ -33,32 +33,30 @@ export interface UseValidationResult extends EngineSnapshot {
 }
 
 export function useValidation(): UseValidationResult {
+  // Client from context — used for the optional server validation tier.
+  // useWorkflowApi throws when no provider is present (drift 6.5.1/pre-impl note).
+  // The hook is always called inside WorkflowBuilder which wraps ApiClientProvider,
+  // so this is safe in production. In tests, wrap in <ApiClientProvider>.
+  //
+  // Called BEFORE engineRef so `client` is available during the lazy-init below.
+  // Hooks run synchronously at the top of the render function — `client` is
+  // defined before the ValidationEngine constructor runs. See drift 6.5.7:
+  // passing `client` at construction avoids a first-render race where the
+  // `[nodes, workflow]` effect (which calls engine.update) would fire before
+  // any post-mount client-injection effect, silently skipping the server tier.
+  const client = useWorkflowApi();
+
   // One engine per mount; initialised lazily inside the ref so it is created
   // exactly once per component lifetime (StrictMode-safe: dispose fires on
   // unmount, fresh engine is created on remount — drift 6.5.6).
   const engineRef = useRef<ValidationEngine | null>(null);
   if (!engineRef.current) {
     engineRef.current = new ValidationEngine({
+      client,
       // debounceMs left at default (300 ms); the hook doesn't control it.
     });
   }
   const engine = engineRef.current;
-
-  // Client from context — used for the optional server validation tier.
-  // useWorkflowApi throws when no provider is present (drift 6.5.1/pre-impl note).
-  // The hook is always called inside WorkflowBuilder which wraps ApiClientProvider,
-  // so this is safe in production. In tests, wrap in <ApiClientProvider>.
-  const client = useWorkflowApi();
-
-  // Inject the client into the engine once on mount. The engine stores a ref to
-  // the client; if the client identity ever changes (not expected) this won't
-  // update — acceptable for Phase 6.
-  useEffect(() => {
-    // Accessing private field via cast is intentional: engine.client is a
-    // typed private field. We use a validated cast rather than a public setter
-    // to keep the engine interface minimal.
-    (engine as unknown as { client: typeof client }).client = client;
-  }, [engine, client]);
 
   // Subscribe to engine notifications via useSyncExternalStore.
   // snapshot() is referentially stable per drift 6.4.5 — safe to pass directly.

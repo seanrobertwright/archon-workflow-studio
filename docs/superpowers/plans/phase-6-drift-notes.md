@@ -540,35 +540,46 @@ cleared so the guard re-runs on the StrictMode remount.
 
 ---
 
-## Drift 6.5.7 — `engine.client` set via private field cast (not-anticipated)
+## Drift 6.5.7 — Engine construction order: client passed at construction, not via setter
 
-**The plan** implied passing the `client` to `ValidationEngine`'s constructor
-options: `new ValidationEngine({ client })`. However, the client must be injected
-after mount (it comes from `useWorkflowApi`, a React hook that can't be called
-before the component renders). Passing it only at construction time works for
-the happy path, but the ValidationEngine constructor's `client` option maps
-to a private field `this.client`.
+**Plan pattern (correct):** `new ValidationEngine({ client })` inside the
+`useRef` lazy initializer.
 
-**What shipped:** A `useEffect` sets the engine's internal client field via a
-validated private cast:
+**Initial implementation (incorrect — corrected in a follow-up commit):** the
+hook constructed the engine with no client, then a `useEffect(() => { (engine
+as unknown as { client }).client = client; }, [engine, client])` injected the
+client after mount via a private-field cast. The stated rationale —
+"`useWorkflowApi` is a hook that can't run before render" — was wrong: React
+hooks run synchronously at the top of the render function, BEFORE any
+`useEffect` fires. So `client` IS available during the `useRef` lazy-init on
+the very first render. Calling `useWorkflowApi` first makes this explicit.
+
+**Why this was a real bug:** React fires `useEffect` callbacks in declaration
+order. The `[nodes, workflow]` effect was declared BEFORE the `[engine,
+client]` injection effect, so on first render, `engine.update()` was called
+with `this.client === undefined`. Result: the server validation tier was
+silently skipped on first render until the next state change re-triggered the
+`[nodes, workflow]` effect (by which time the injection effect had run). The
+3 unit tests didn't catch this because they never asserted on server-tier
+behavior — they only checked the instant tier.
+
+**What shipped (after spec review fix):**
 ```ts
-(engine as unknown as { client: typeof client }).client = client;
+const client = useWorkflowApi();              // hook, runs synchronously first
+const engineRef = useRef<ValidationEngine | null>(null);
+if (!engineRef.current) {
+  engineRef.current = new ValidationEngine({ client });   // client available here
+}
 ```
-This is an intentional private-field-access pattern (well-known in TypeScript
-test/integration code). The alternative — adding a public `setClient(c)` method
-to `ValidationEngine` — was considered but rejected to keep the engine interface
-minimal and avoid exposing mutation surface to consumers other than the hook.
+The post-mount client-injection `useEffect` was deleted. Client identity is
+stable across renders (the `WorkflowApiClient` is passed once into the
+provider's value prop and held there for the lifetime of the
+`ApiClientProvider` tree), so a single construction-time assignment is
+sufficient.
 
-**Simpler alternative considered:** pass `client` directly to `new ValidationEngine({ client })`
-inside the `useRef` lazy initializer block, then skip the `useEffect`. This works
-but means the engine is created once with whatever client is current at first-
-render time. If `useWorkflowApi` ever returns a different client reference on
-re-render, the engine would hold a stale one. The `useEffect` injection is
-future-proof, though this distinction doesn't matter in Phase 6 (client is
-stable across the WorkflowBuilder lifetime).
-
-**Follow-up:** If this hack offends, add `setClient(c: WorkflowApiClient): void`
-to `ValidationEngine` in a future PR.
+**Anticipated by dispatch:** No — the dispatch documentation suggested the
+plan's pattern would work; the initial implementation introduced this race
+unnecessarily. Caught by spec review.
 
 ---
 
