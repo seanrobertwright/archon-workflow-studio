@@ -7,6 +7,7 @@ import { pickBaseFields } from '../nodes/shared/pickBaseFields';
 import { mergePatch } from './mergePatch';
 import { serializeYaml } from '../exporter/serializeYaml';
 import { withUndo, useUndoStore, type UndoSnapshot } from './undo-store';
+import { serializeClipboard, parseClipboard } from '../clipboard';
 
 /**
  * Base fields whose semantics are AI-inference-specific (provider routing,
@@ -79,6 +80,8 @@ export interface BuilderState {
   isYamlPreviewOpen: boolean;
   /** Serialized YAML captured at last loadWorkflow call. Used to detect unsaved changes. */
   baselineYaml: string | null;
+  /** In-memory clipboard fallback for environments where navigator.clipboard is unavailable. */
+  clipboard: string | null;
 
   setNodePosition: (id: string, x: number, y: number) => void;
 
@@ -140,6 +143,13 @@ export interface BuilderState {
   applySnapshot: (snap: UndoSnapshot) => void;
   /** Alias for applySnapshot — same semantics, symmetric naming for redo. */
   revertSnapshot: (snap: UndoSnapshot) => void;
+
+  /** Copy selected nodes to in-memory clipboard and (best-effort) navigator.clipboard. */
+  copySelection: () => Promise<void>;
+  /** Paste from navigator.clipboard (falling back to in-memory clipboard). Remaps IDs and depends_on. */
+  pasteClipboard: () => Promise<void>;
+  /** Copy then remove selected nodes in one operation. */
+  cutSelection: () => Promise<void>;
 }
 
 export const useBuilderStore = create<BuilderState>((set, get) => {
@@ -164,6 +174,7 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     hoveredNodeId: null,
     isYamlPreviewOpen: false,
     baselineYaml: null,
+    clipboard: null,
 
     setNodePosition: (id, x, y) => set((s) => ({ positions: { ...s.positions, [id]: { x, y } } })),
 
@@ -415,6 +426,74 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
         return next;
       };
       set({ nodes: state.nodes.map(renameRefs) });
+    },
+
+    copySelection: async () => {
+      const { nodes, selectedNodeIds } = get();
+      const selected = nodes.filter((n) => selectedNodeIds.includes(n.id));
+      if (selected.length === 0) return;
+      const text = serializeClipboard(selected);
+      set({ clipboard: text });
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // private mode or no permission — in-memory fallback already set
+      }
+    },
+
+    pasteClipboard: async () => {
+      let text = get().clipboard;
+      try {
+        const fromBrowser = await navigator.clipboard.readText();
+        if (fromBrowser) text = fromBrowser;
+      } catch {
+        // use in-memory fallback
+      }
+      if (!text) return;
+      const envelope = parseClipboard(text);
+      if (!envelope) return;
+
+      // Build old→new id map
+      const idMap = new Map<string, string>();
+      const remapped = (envelope.nodes as BuilderNode[]).map((n) => {
+        const newId = `${n.id}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        idMap.set(n.id, newId);
+        return { ...n, id: newId };
+      });
+
+      // Rewrite depends_on using remapped IDs
+      const rewritten = remapped.map((n) => ({
+        ...n,
+        base: {
+          ...n.base,
+          depends_on: ((n.base?.depends_on ?? []) as string[]).map(
+            (dep: string) => idMap.get(dep) ?? dep,
+          ),
+        },
+      }));
+
+      withUndo('paste', snapshot('paste'));
+
+      // Build positions: offset each node by +30,+30 from its original position.
+      // n.id at this point is the NEW id; use idMap (old→new) reversed to find origId.
+      const newToOld = new Map<string, string>();
+      idMap.forEach((newId, oldId) => newToOld.set(newId, oldId));
+
+      const newPositions = { ...get().positions };
+      rewritten.forEach((n) => {
+        const origId = newToOld.get(n.id);
+        const origPos = origId ? get().positions[origId] : undefined;
+        newPositions[n.id] = origPos
+          ? { x: origPos.x + 30, y: origPos.y + 30 }
+          : { x: 100, y: 100 };
+      });
+
+      set({ nodes: [...get().nodes, ...rewritten], positions: newPositions });
+    },
+
+    cutSelection: async () => {
+      await get().copySelection();
+      get().removeSelected();
     },
 
     applySnapshot: (snap) => set({ nodes: snap.nodes as BuilderNode[], positions: snap.positions }),
