@@ -18,7 +18,6 @@ export function WorkflowListPage() {
   const client = useWorkflowApi();
   const qc = useQueryClient();
   const settings = useConnectionStore((s) => s.settings)!;
-  const clearConnection = useConnectionStore((s) => s.clear);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['workflows', settings.archonUrl, settings.cwd],
@@ -107,7 +106,7 @@ export function WorkflowListPage() {
               opacity: 0.7,
             }}
           >
-            {settings.archonUrl} · {settings.cwd}
+            Standalone mode — workflows stored in browser
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -124,23 +123,6 @@ export function WorkflowListPage() {
             }}
           >
             + New workflow
-          </button>
-          <button
-            onClick={() => {
-              clearConnection();
-              navigate('/connect');
-            }}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 4,
-              cursor: 'pointer',
-              background: 'transparent',
-              color: 'var(--studio-fg-muted)',
-              border: '1px solid var(--studio-border)',
-              fontSize: 14,
-            }}
-          >
-            Disconnect
           </button>
         </div>
       </div>

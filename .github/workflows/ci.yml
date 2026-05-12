@@ -15,4 +15,5 @@ jobs:
       - run: bun run lint
       - run: bun run format:check
       - run: bun --filter='*' run build
+      - run: bun --filter='@archon-studio/core' run typecheck
       - run: bun --filter='*' run test
