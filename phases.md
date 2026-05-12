@@ -8,8 +8,8 @@
 | Phase 5 — Visual `when:` builder + autocomplete                                          | ✅      | ✅       | ✅       |
 | Phase 6 — Validation pipeline + ValidationPanel                                          | ✅      | ✅       | ✅       |
 | Phase 7 — YAML preview pane                                                              | ✅      | ✅       | ✅       |
-| Phase 8 — Editor polish (undo/redo, multi-select, copy/paste, theme picker)              | ✅      | ✅       | ❌       |
-| Phase 9 — Connected mode complete (connect, list, save)                                  | ❌      | ❌       | ❌       |
+| Phase 8 — Editor polish (undo/redo, multi-select, copy/paste, theme picker)              | ✅      | ✅       | ✅       |
+| Phase 9 — Connected mode complete (connect, list, save)                                  | ✅      | ❌       | ❌       |
 | Phase 10 — Tests + drift CI + docs + release polish                                      | ❌      | ❌       | ❌       |
 
 ## Phase 4 — completion notes
