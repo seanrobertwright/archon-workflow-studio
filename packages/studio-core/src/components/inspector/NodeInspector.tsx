@@ -34,6 +34,7 @@ function fieldToTab(_field: string | undefined): InspectorTabId {
 
 export function NodeInspector() {
   const selectedId = useBuilderStore((s) => s.primarySelectionId);
+  const selectionSize = useBuilderStore((s) => s.selectedNodeIds.length);
   const nodes = useBuilderStore((s) => s.nodes);
   const focused = useBuilderStore((s) => s.focusedIssue);
 
@@ -63,6 +64,15 @@ export function NodeInspector() {
     return () => clearTimeout(t);
   }, [focused]);
 
+  if (selectionSize > 1) {
+    return (
+      <aside style={shellStyle} aria-label="Node inspector" data-testid="inspector-multi">
+        <div style={emptyStyle}>
+          {selectionSize} nodes selected — use the toolbar or right-click to align or distribute.
+        </div>
+      </aside>
+    );
+  }
   if (!selectedId || !node) {
     return (
       <aside style={shellStyle} aria-label="Node inspector" data-testid="inspector-empty">

@@ -1,7 +1,12 @@
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
-import { ApiClientProvider, ThemeProvider, useThemeStore } from '@archon-studio/core';
+import {
+  ApiClientProvider,
+  ThemeProvider,
+  useThemeStore,
+  useUserLibraryStore,
+} from '@archon-studio/core';
 import { useConnectionStore } from './connection-store';
 import { BrowserApiClient } from './browser-api-client';
 import { WorkflowListPage } from './routes/WorkflowListPage';
@@ -25,6 +30,7 @@ const STANDALONE_SETTINGS = {
 function AppShell() {
   useEffect(() => {
     useThemeStore.getState().hydrate();
+    useUserLibraryStore.getState().hydrate();
     const conn = useConnectionStore.getState();
     conn.hydrate();
     if (!useConnectionStore.getState().settings) {

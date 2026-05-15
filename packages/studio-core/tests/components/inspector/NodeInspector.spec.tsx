@@ -24,6 +24,14 @@ describe('NodeInspector', () => {
     expect(screen.getByText(/select a node/i)).toBeDefined();
   });
 
+  it('renders a multi-select notice (and no editor) when 2+ nodes are selected', () => {
+    seedTwoVariants();
+    useBuilderStore.getState().setSelection(['n-cmd', 'n-bash']);
+    render(<NodeInspector />);
+    expect(screen.getByTestId('inspector-multi')).toBeDefined();
+    expect(screen.queryByRole('tab', { name: /general/i })).toBeNull();
+  });
+
   it('renders all 7 tabs for command (AI-honoring)', () => {
     seedTwoVariants();
     useBuilderStore.getState().setSelection(['n-cmd']);

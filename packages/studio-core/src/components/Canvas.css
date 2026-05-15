@@ -31,3 +31,17 @@
 .react-flow__controls-button svg {
   fill: var(--studio-fg);
 }
+
+/* Mode-driven pane cursor. React Flow's default cursor is .grab when
+ * panOnDrag is true; we keep that for pan mode and force the default arrow
+ * for select mode so users get the right affordance for marquee selection. */
+[data-canvas-mode='select'] .react-flow__pane {
+  cursor: default;
+}
+[data-canvas-mode='pan'] .react-flow__pane {
+  cursor: grab;
+}
+[data-canvas-mode='pan'] .react-flow__pane:active,
+[data-canvas-mode='pan'] .react-flow__pane.dragging {
+  cursor: grabbing;
+}

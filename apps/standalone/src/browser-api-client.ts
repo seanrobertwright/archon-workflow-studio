@@ -10,6 +10,20 @@ import type {
 
 const STORAGE_KEY = 'archon-studio:workflows';
 
+// Curated starter commands for the standalone build. These map 1:1 to the
+// `command:` node variant (data.command = <name>) — they aren't tied to any
+// real backend slash command. Users can drag, rename, or ignore them.
+const BUNDLED_COMMANDS = [
+  'classify',
+  'summarize',
+  'review',
+  'refactor',
+  'translate',
+  'extract',
+  'plan',
+  'critique',
+] as const;
+
 interface StoredWorkflow {
   definition: WorkflowDefinition;
   source: 'project' | 'global';
@@ -83,7 +97,10 @@ export class BrowserApiClient implements WorkflowApiClient {
   async listCommands(
     _cwd: string,
   ): Promise<{ name: string; source: 'project' | 'global' | 'bundled' }[]> {
-    return [];
+    // Standalone mode has no Archon filesystem to enumerate, but an empty
+    // Commands section is confusing. Ship a small curated set of common AI
+    // command names so users have something to drag onto the canvas and rename.
+    return BUNDLED_COMMANDS.map((name) => ({ name, source: 'bundled' as const }));
   }
 
   async listProviders(): Promise<{ id: string; capabilities: Record<string, boolean> }[]> {

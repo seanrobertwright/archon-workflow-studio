@@ -148,7 +148,7 @@ describe('<Toolbar> alignment buttons', () => {
     useUndoStore.setState({ past: [], future: [] });
   });
 
-  it('align left button triggers alignLeft on selection', () => {
+  it('Align vertically button equalizes X (centerV) across selection', () => {
     const posMap = new Map([
       ['a', { x: 10, y: 30 }],
       ['b', { x: 50, y: 10 }],
@@ -164,11 +164,9 @@ describe('<Toolbar> alignment buttons', () => {
         <PositionProvider value={testPositions}>{children}</PositionProvider>
       ),
     });
-    const btn = screen.getByLabelText('Align left');
+    const btn = screen.getByLabelText('Align vertically');
     fireEvent.click(btn);
     const { positions } = useBuilderStore.getState();
-    // both nodes should now be at x=10 (leftmost)
-    expect(positions['a'].x).toBe(10);
-    expect(positions['b'].x).toBe(10);
+    expect(positions['a'].x).toBe(positions['b'].x);
   });
 });

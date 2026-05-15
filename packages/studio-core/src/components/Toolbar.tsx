@@ -2,6 +2,12 @@ import { ThemePicker } from './ThemePicker';
 import { useBuilderStore } from '../store/builder-store';
 import { useUndoStore } from '../store/undo-store';
 import { usePositionContext } from '../hooks/PositionContext';
+import {
+  AlignVerticalIcon,
+  AlignHorizontalIcon,
+  SpaceHeightIcon,
+  SpacingWidthIcon,
+} from './icons/AlignmentIcons';
 
 export interface ToolbarProps {
   workflowName: string;
@@ -36,6 +42,8 @@ export function Toolbar({
   const autoArrangeSelection = useBuilderStore((s) => s.autoArrangeSelection);
   const gridSnap = useBuilderStore((s) => s.gridSnap);
   const toggleGridSnap = useBuilderStore((s) => s.toggleGridSnap);
+  const canvasMode = useBuilderStore((s) => s.canvasMode);
+  const setCanvasMode = useBuilderStore((s) => s.setCanvasMode);
   const applyUndo = useBuilderStore((s) => s.applyUndo);
   const applyRedo = useBuilderStore((s) => s.applyRedo);
   const undoLabel = useUndoStore((s) => s.nextUndoLabel());
@@ -117,126 +125,108 @@ export function Toolbar({
       >
         Reset layout
       </button>
+      <div role="group" aria-label="Canvas mode" style={{ display: 'flex', gap: 4 }}>
+        <button
+          type="button"
+          aria-label="Select mode"
+          aria-pressed={canvasMode === 'select'}
+          title="Select mode — drag on empty canvas to marquee-select"
+          onClick={() => setCanvasMode('select')}
+          style={{
+            background: canvasMode === 'select' ? 'var(--studio-accent, #7c3aed)' : 'transparent',
+            color: canvasMode === 'select' ? '#fff' : 'var(--studio-fg)',
+            border: '1px solid var(--studio-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '4px 8px',
+            cursor: 'pointer',
+            fontSize: 14,
+          }}
+        >
+          ⬚
+        </button>
+        <button
+          type="button"
+          aria-label="Pan mode"
+          aria-pressed={canvasMode === 'pan'}
+          title="Pan mode — drag to move the canvas"
+          onClick={() => setCanvasMode('pan')}
+          style={{
+            background: canvasMode === 'pan' ? 'var(--studio-accent, #7c3aed)' : 'transparent',
+            color: canvasMode === 'pan' ? '#fff' : 'var(--studio-fg)',
+            border: '1px solid var(--studio-muted)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '4px 8px',
+            cursor: 'pointer',
+            fontSize: 14,
+          }}
+        >
+          ✋
+        </button>
+      </div>
       {hasSelection && (
-        <div role="group" aria-label="Alignment">
+        <div role="group" aria-label="Alignment" style={{ display: 'flex', gap: 4 }}>
           <button
             type="button"
-            aria-label="Align left"
+            aria-label="Align vertically"
+            title="Align vertically — centers along a vertical axis"
             onClick={() => {
               syncPositionsBeforeOp();
-              alignSelection('left');
+              alignSelection('centerV');
               syncPositionsAfterOp();
             }}
-            style={{
-              background: 'transparent',
-              color: 'var(--studio-fg)',
-              border: '1px solid var(--studio-muted)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '4px 8px',
-              cursor: 'pointer',
-            }}
+            style={iconBtnStyle}
           >
-            ⬤←
+            <AlignVerticalIcon />
           </button>
           <button
             type="button"
-            aria-label="Align right"
+            aria-label="Align horizontally"
+            title="Align horizontally — centers along a horizontal axis"
             onClick={() => {
               syncPositionsBeforeOp();
-              alignSelection('right');
+              alignSelection('centerH');
               syncPositionsAfterOp();
             }}
-            style={{
-              background: 'transparent',
-              color: 'var(--studio-fg)',
-              border: '1px solid var(--studio-muted)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '4px 8px',
-              cursor: 'pointer',
-            }}
+            style={iconBtnStyle}
           >
-            →⬤
+            <AlignHorizontalIcon />
           </button>
           <button
             type="button"
-            aria-label="Align top"
+            aria-label="Space evenly horizontally"
+            title="Space evenly horizontally (needs 3+)"
+            disabled={selectedNodeIds.length < 3}
             onClick={() => {
               syncPositionsBeforeOp();
-              alignSelection('top');
+              distributeSelection('h');
               syncPositionsAfterOp();
             }}
             style={{
-              background: 'transparent',
-              color: 'var(--studio-fg)',
-              border: '1px solid var(--studio-muted)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '4px 8px',
-              cursor: 'pointer',
+              ...iconBtnStyle,
+              opacity: selectedNodeIds.length < 3 ? 0.45 : 1,
+              cursor: selectedNodeIds.length < 3 ? 'not-allowed' : 'pointer',
             }}
           >
-            ⬤↑
+            <SpacingWidthIcon />
           </button>
           <button
             type="button"
-            aria-label="Align bottom"
+            aria-label="Space evenly vertically"
+            title="Space evenly vertically (needs 3+)"
+            disabled={selectedNodeIds.length < 3}
             onClick={() => {
               syncPositionsBeforeOp();
-              alignSelection('bottom');
+              distributeSelection('v');
               syncPositionsAfterOp();
             }}
             style={{
-              background: 'transparent',
-              color: 'var(--studio-fg)',
-              border: '1px solid var(--studio-muted)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '4px 8px',
-              cursor: 'pointer',
+              ...iconBtnStyle,
+              opacity: selectedNodeIds.length < 3 ? 0.45 : 1,
+              cursor: selectedNodeIds.length < 3 ? 'not-allowed' : 'pointer',
             }}
           >
-            ↓⬤
+            <SpaceHeightIcon />
           </button>
-          {selectedNodeIds.length >= 3 && (
-            <>
-              <button
-                type="button"
-                aria-label="Distribute horizontally"
-                onClick={() => {
-                  syncPositionsBeforeOp();
-                  distributeSelection('h');
-                  syncPositionsAfterOp();
-                }}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--studio-fg)',
-                  border: '1px solid var(--studio-muted)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '4px 8px',
-                  cursor: 'pointer',
-                }}
-              >
-                ⇔
-              </button>
-              <button
-                type="button"
-                aria-label="Distribute vertically"
-                onClick={() => {
-                  syncPositionsBeforeOp();
-                  distributeSelection('v');
-                  syncPositionsAfterOp();
-                }}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--studio-fg)',
-                  border: '1px solid var(--studio-muted)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '4px 8px',
-                  cursor: 'pointer',
-                }}
-              >
-                ⇕
-              </button>
-            </>
-          )}
           <button
             type="button"
             aria-label="Auto arrange"
@@ -307,3 +297,15 @@ export function Toolbar({
     </header>
   );
 }
+
+const iconBtnStyle = {
+  background: 'transparent',
+  color: 'var(--studio-fg)',
+  border: '1px solid var(--studio-muted)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '4px 6px',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const;

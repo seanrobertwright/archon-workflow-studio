@@ -98,11 +98,17 @@ export interface BuilderState {
   activeGuides: Guide[];
   /** Whether snap-to-grid is enabled. */
   gridSnap: boolean;
+  /** Canvas interaction mode: 'pan' = drag pans viewport, 'select' = drag draws marquee. */
+  canvasMode: 'pan' | 'select';
+  /** When false, nodes/edges are locked — no drag, no selection, no new connections. */
+  interactive: boolean;
 
   setNodePosition: (id: string, x: number, y: number) => void;
   setManyPositions: (entries: Iterable<[string, { x: number; y: number }]>) => void;
   setActiveGuides: (guides: Guide[]) => void;
   toggleGridSnap: () => void;
+  setCanvasMode: (mode: 'pan' | 'select') => void;
+  toggleInteractive: () => void;
 
   loadWorkflow: (input: LoadWorkflowInput) => void;
   clearWorkflow: () => void;
@@ -207,6 +213,8 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     clipboard: null,
     activeGuides: [],
     gridSnap: false,
+    canvasMode: 'select',
+    interactive: true,
 
     setNodePosition: (id, x, y) => set((s) => ({ positions: { ...s.positions, [id]: { x, y } } })),
     setManyPositions: (entries) => {
@@ -216,6 +224,8 @@ export const useBuilderStore = create<BuilderState>((set, get) => {
     },
     setActiveGuides: (guides) => set({ activeGuides: guides }),
     toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
+    setCanvasMode: (mode) => set({ canvasMode: mode }),
+    toggleInteractive: () => set((s) => ({ interactive: !s.interactive })),
 
     loadWorkflow: (input) => {
       const { yaml: baseline } = serializeYaml(input);
