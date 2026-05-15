@@ -5,6 +5,7 @@ import type {
   ValidateResult,
 } from '@archon-studio/core';
 import type { WorkflowDefinition } from '@archon-studio/core';
+import { ArchonHttpError } from './errors';
 
 export interface ArchonApiClientOptions {
   baseUrl: string; // e.g., 'http://localhost:3737'
@@ -13,43 +14,106 @@ export interface ArchonApiClientOptions {
 }
 
 /**
- * Phase 9 fills in real implementations. Phase 0 ships throwing stubs so the
- * type-check passes and consumers can wire the client without runtime calls.
+ * Assumed endpoint paths — update if probe results (docs/probes/) differ.
+ * All paths are appended to baseUrl after stripping a trailing slash.
  */
-export class ArchonApiClient implements WorkflowApiClient {
-  constructor(_options: ArchonApiClientOptions) {}
+const EP = {
+  openapi: '/api/openapi.json',
+  codebases: '/api/codebases',
+  workflows: '/api/workflows',
+  commands: '/api/commands',
+  providers: '/api/providers',
+  validate: '/api/validate',
+} as const;
 
-  ping(): Promise<{ ok: true; serverVersion?: string }> {
-    throw new Error('ArchonApiClient.ping not yet implemented (Phase 9)');
+export class ArchonApiClient implements WorkflowApiClient {
+  private readonly _fetch: typeof fetch;
+  private readonly base: string;
+  private readonly authHeader?: string;
+
+  constructor(opts: ArchonApiClientOptions) {
+    this._fetch = opts.fetchFn ?? globalThis.fetch;
+    this.base = opts.baseUrl.replace(/\/$/, '');
+    this.authHeader = opts.authHeader;
   }
-  listCodebases(): Promise<CodebaseInfo[] | null> {
-    throw new Error('ArchonApiClient.listCodebases not yet implemented (Phase 9)');
+
+  private headers(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      ...(this.authHeader ? { Authorization: this.authHeader } : {}),
+    };
   }
-  listWorkflows(_cwd: string): Promise<WorkflowListItem[]> {
-    throw new Error('ArchonApiClient.listWorkflows not yet implemented (Phase 9)');
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const init: RequestInit = {
+      method,
+      headers: this.headers(),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    };
+    const res = await this._fetch(`${this.base}${path}`, init);
+    if (!res.ok) {
+      throw new ArchonHttpError(res.status, path, `${method} ${path} → ${res.status}`);
+    }
+    // 204 No Content — return undefined cast to T (caller doesn't use return value)
+    if (res.status === 204) return undefined as T;
+    return res.json() as Promise<T>;
   }
-  listCommands(
-    _cwd: string,
+
+  async ping(): Promise<{ ok: true; serverVersion?: string }> {
+    const doc = await this.request<{ info?: { version?: string } }>('GET', EP.openapi);
+    return { ok: true, serverVersion: doc?.info?.version };
+  }
+
+  async listCodebases(): Promise<CodebaseInfo[] | null> {
+    try {
+      return await this.request<CodebaseInfo[]>('GET', EP.codebases);
+    } catch (err) {
+      if (err instanceof ArchonHttpError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async listWorkflows(cwd: string): Promise<WorkflowListItem[]> {
+    return this.request('GET', `${EP.workflows}?cwd=${encodeURIComponent(cwd)}`);
+  }
+
+  async listCommands(
+    cwd: string,
   ): Promise<{ name: string; source: 'project' | 'global' | 'bundled' }[]> {
-    throw new Error('ArchonApiClient.listCommands not yet implemented (Phase 9)');
+    return this.request('GET', `${EP.commands}?cwd=${encodeURIComponent(cwd)}`);
   }
-  listProviders(): Promise<{ id: string; capabilities: Record<string, boolean> }[]> {
-    throw new Error('ArchonApiClient.listProviders not yet implemented (Phase 9)');
+
+  async listProviders(): Promise<{ id: string; capabilities: Record<string, boolean> }[]> {
+    return this.request('GET', EP.providers);
   }
-  getWorkflow(_name: string, _cwd: string): Promise<WorkflowDefinition> {
-    throw new Error('ArchonApiClient.getWorkflow not yet implemented (Phase 9)');
+
+  async getWorkflow(name: string, cwd: string): Promise<WorkflowDefinition> {
+    return this.request(
+      'GET',
+      `${EP.workflows}/${encodeURIComponent(name)}?cwd=${encodeURIComponent(cwd)}`,
+    );
   }
-  saveWorkflow(
-    _name: string,
-    _cwd: string,
-    _definition: WorkflowDefinition,
+
+  async saveWorkflow(
+    name: string,
+    cwd: string,
+    definition: WorkflowDefinition,
   ): Promise<WorkflowDefinition> {
-    throw new Error('ArchonApiClient.saveWorkflow not yet implemented (Phase 9)');
+    return this.request(
+      'PUT',
+      `${EP.workflows}/${encodeURIComponent(name)}?cwd=${encodeURIComponent(cwd)}`,
+      definition,
+    );
   }
-  deleteWorkflow(_name: string, _cwd: string): Promise<void> {
-    throw new Error('ArchonApiClient.deleteWorkflow not yet implemented (Phase 9)');
+
+  async deleteWorkflow(name: string, cwd: string): Promise<void> {
+    return this.request(
+      'DELETE',
+      `${EP.workflows}/${encodeURIComponent(name)}?cwd=${encodeURIComponent(cwd)}`,
+    );
   }
-  validateWorkflow(_definition: WorkflowDefinition): Promise<ValidateResult> {
-    throw new Error('ArchonApiClient.validateWorkflow not yet implemented (Phase 9)');
+
+  async validateWorkflow(definition: WorkflowDefinition): Promise<ValidateResult> {
+    return this.request('POST', EP.validate, definition);
   }
 }

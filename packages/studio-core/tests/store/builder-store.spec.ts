@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { useBuilderStore } from '../../src/store/builder-store';
 
+const initial = useBuilderStore.getState();
+
 describe('builder-store', () => {
   beforeEach(() => useBuilderStore.getState().clearWorkflow());
 
@@ -207,5 +209,46 @@ describe('builder-store', () => {
     const nodes = useBuilderStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0]!.base.depends_on).toBeUndefined();
+  });
+});
+
+describe('builder-store — Phase 7 slice', () => {
+  beforeEach(() => {
+    useBuilderStore.setState(initial, true);
+  });
+
+  it('hoveredNodeId defaults to null and is settable', () => {
+    expect(useBuilderStore.getState().hoveredNodeId).toBeNull();
+    useBuilderStore.getState().setHoveredNodeId('x');
+    expect(useBuilderStore.getState().hoveredNodeId).toBe('x');
+    useBuilderStore.getState().setHoveredNodeId(null);
+    expect(useBuilderStore.getState().hoveredNodeId).toBeNull();
+  });
+
+  it('isYamlPreviewOpen defaults to false and toggles', () => {
+    expect(useBuilderStore.getState().isYamlPreviewOpen).toBe(false);
+    useBuilderStore.getState().setYamlPreviewOpen(true);
+    expect(useBuilderStore.getState().isYamlPreviewOpen).toBe(true);
+  });
+
+  it('loadWorkflow seeds baselineYaml from the loaded input', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'n', description: 'd', base: {}, unknown: {} },
+      nodes: [{ id: 'a', variant: 'prompt', data: { prompt: 'x' }, base: {}, unknown: {} }],
+    });
+    const baseline = useBuilderStore.getState().baselineYaml;
+    expect(typeof baseline).toBe('string');
+    expect(baseline).toContain('name: n');
+    expect(baseline).toContain('id: a');
+  });
+
+  it('opening the drawer does not change baseline', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'n', description: 'd', base: {}, unknown: {} },
+      nodes: [],
+    });
+    const before = useBuilderStore.getState().baselineYaml;
+    useBuilderStore.getState().setYamlPreviewOpen(true);
+    expect(useBuilderStore.getState().baselineYaml).toBe(before);
   });
 });

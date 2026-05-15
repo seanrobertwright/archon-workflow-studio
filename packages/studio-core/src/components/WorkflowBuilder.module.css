@@ -1,10 +1,11 @@
 .shell {
   display: grid;
-  grid-template-rows: 56px 1fr;
+  grid-template-rows: 56px 1fr var(--studio-drawer-h, 36px);
   grid-template-columns: 240px 1fr 320px;
   grid-template-areas:
     'toolbar  toolbar  toolbar'
-    'library  canvas   inspector';
+    'library  canvas   inspector'
+    'drawer   drawer   drawer';
   height: 100%;
   width: 100%;
   background: var(--studio-bg);
@@ -34,4 +35,14 @@
   border-left: 1px solid var(--studio-muted);
   min-height: 0;
   overflow: hidden;
+}
+.drawer {
+  grid-area: drawer;
+  border-top: 1px solid var(--studio-muted);
+  min-height: 0;
+  overflow: hidden;
+  background: var(--studio-surface);
+}
+.shell[data-drawer='expanded'] {
+  --studio-drawer-h: 240px;
 }

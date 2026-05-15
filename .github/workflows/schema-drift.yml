@@ -7,6 +7,9 @@ on:
     paths:
       - 'packages/studio-core/src/schemas/**'
       - 'packages/studio-core/src/command-validation.ts'
+      - 'packages/studio-core/src/lib/grammar.ts'
+      - 'packages/studio-core/src/lib/grammar.archon.md'
+      - 'scripts/check-when-grammar-drift.ts'
       - '.archon-source-pin'
 jobs:
   drift:
@@ -18,3 +21,4 @@ jobs:
           bun-version: 1.3.0
       - run: bun install --frozen-lockfile
       - run: bun run check-schema-drift
+      - run: bun run check-when-grammar-drift

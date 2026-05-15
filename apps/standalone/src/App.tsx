@@ -1,61 +1,62 @@
-import { useEffect, useState } from 'react';
-import { WorkflowBuilder, fromWorkflowDefinition, useBuilderStore } from '@archon-studio/core';
-import { StubArchonApiClient } from '@archon-studio/api-archon';
-// Vite bundles YAML files as raw strings via `?raw`. The fixtures package's
-// own loader uses `node:fs` and can't be imported in the browser; we resolve
-// the asset path directly through Vite's module graph instead.
-import smokeYaml from '@archon-studio/fixtures/round-trip-fixtures/_smoke-pi-all-nodes.yaml?raw';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { ApiClientProvider, ThemeProvider, useThemeStore } from '@archon-studio/core';
+import { useConnectionStore } from './connection-store';
+import { BrowserApiClient } from './browser-api-client';
+import { WorkflowListPage } from './routes/WorkflowListPage';
+import { BuilderPage } from './routes/BuilderPage';
 
-const FIXTURE_NAME = '_smoke-pi-all-nodes';
-const FIXTURE_TEXT: Record<string, string> = {
-  [FIXTURE_NAME]: smokeYaml,
-};
-
-const client = new StubArchonApiClient({
-  loadFixture: (name) => {
-    const text = FIXTURE_TEXT[name];
-    if (text == null) {
-      throw new Error(`[standalone] no bundled fixture named '${name}'`);
-    }
-    return text;
-  },
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
-export function App() {
-  const [loaded, setLoaded] = useState(false);
+const STANDALONE_SETTINGS = {
+  archonUrl: 'browser://standalone',
+  cwd: 'local',
+  token: '',
+} as const;
 
+/**
+ * Standalone shell: hydrates stores, ensures connection-store has placeholder
+ * values so downstream pages can read settings without a real Archon backend.
+ * Workflows are persisted in localStorage via {@link BrowserApiClient}.
+ */
+function AppShell() {
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const def = await client.getWorkflow(FIXTURE_NAME, '/dev');
-      if (cancelled) return;
-      // The cast is a structural no-op: WorkflowDefinition is shaped as
-      // Record<string, unknown> at runtime (Zod-validated, but not branded).
-      // Phase 1's `fromWorkflowDefinition` accepts the loose type so the same
-      // importer handles untrusted parsed JSON. Phase 9 may tighten by giving
-      // the importer an overload that accepts WorkflowDefinition directly.
-      const input = fromWorkflowDefinition(def as Record<string, unknown>);
-      useBuilderStore.getState().loadWorkflow(input);
-      setLoaded(true);
-    })().catch((err) => {
-      console.error('[standalone] fixture load failed', err);
-    });
-    return () => {
-      cancelled = true;
-    };
+    useThemeStore.getState().hydrate();
+    const conn = useConnectionStore.getState();
+    conn.hydrate();
+    if (!useConnectionStore.getState().settings) {
+      conn.save({ ...STANDALONE_SETTINGS });
+    }
   }, []);
-
-  if (!loaded) {
-    return <div style={{ padding: 24, color: 'var(--studio-fg)' }}>Loading {FIXTURE_NAME}…</div>;
-  }
-
+  const preset = useThemeStore((s) => s.preset);
+  const client = useMemo(() => new BrowserApiClient(), []);
   return (
-    <WorkflowBuilder
-      client={client}
-      theme="archon-dark"
-      archonUrl="__dev__"
-      cwd="__dev__"
-      workflowName={FIXTURE_NAME}
-    />
+    <ThemeProvider preset={preset}>
+      <ApiClientProvider client={client}>
+        <Outlet />
+      </ApiClientProvider>
+    </ThemeProvider>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    element: <AppShell />,
+    children: [
+      { path: '/', element: <Navigate to="/workflows" replace /> },
+      { path: '/workflows', element: <WorkflowListPage /> },
+      { path: '/builder/:name', element: <BuilderPage /> },
+    ],
+  },
+]);
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }

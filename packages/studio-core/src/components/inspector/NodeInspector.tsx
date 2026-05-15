@@ -1,9 +1,10 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useBuilderStore } from '../../store/builder-store';
 import { defaultRegistry } from '../../nodes/default-registry';
-import { tabsForVariant, type InspectorProps } from '../../nodes/shared/types';
+import { tabsForVariant, type InspectorProps, type InspectorTabId } from '../../nodes/shared/types';
 import { useInspectorPatch } from '../../hooks/useInspectorPatch';
 import { RenameField } from './shared';
+import { VariantPicker } from './general/VariantPicker';
 import { InspectorTabs } from './InspectorTabs';
 import { ExecutionTab } from './tabs/ExecutionTab';
 import { ProviderTab } from './tabs/ProviderTab';
@@ -18,9 +19,24 @@ import { AdvancedTab } from './tabs/AdvancedTab';
  * tabsForVariant (capability-gated), and renders the per-variant General
  * Inspector + shared base-field tab stubs. Width matches spec §5.1 (320px).
  */
+/**
+ * Maps a focused issue's field name to the inspector tab that contains it.
+ * All body editors (prompt, script, bash, command, loop.*, approval.*, cancel,
+ * when) live in the 'general' tab. Execution, provider, etc. have no field-
+ * level focus routing from validation, so they fall through to 'general'.
+ */
+function fieldToTab(_field: string | undefined): InspectorTabId {
+  // Every field the validator emits lives in the General tab (the variant
+  // Inspector renders inside NodeInspector's 'general' case). Keep the
+  // function for forward-compatibility if future tabs gain field markers.
+  return 'general';
+}
+
 export function NodeInspector() {
-  const selectedId = useBuilderStore((s) => s.selectedNodeId);
+  const selectedId = useBuilderStore((s) => s.primarySelectionId);
   const nodes = useBuilderStore((s) => s.nodes);
+  const focused = useBuilderStore((s) => s.focusedIssue);
+
   const node = useMemo(
     () => (selectedId ? nodes.find((n) => n.id === selectedId) : undefined),
     [nodes, selectedId],
@@ -30,6 +46,22 @@ export function NodeInspector() {
     [nodes, selectedId],
   );
   const onChange = useInspectorPatch(selectedId ?? '');
+
+  // Controlled tab state — lifted so the focus-reaction effect can switch tabs.
+  const [activeTab, setActiveTab] = useState<InspectorTabId>('general');
+
+  // Focus reaction: switch to the correct tab then scroll + flash the field.
+  useEffect(() => {
+    if (!focused) return;
+    setActiveTab(fieldToTab(focused.field));
+    const t = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-field="${focused.field}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.classList.add('flash');
+      setTimeout(() => el?.classList.remove('flash'), 1200);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [focused]);
 
   if (!selectedId || !node) {
     return (
@@ -60,7 +92,7 @@ export function NodeInspector() {
           {node.variant}
         </span>
       </header>
-      <InspectorTabs tabs={tabs}>
+      <InspectorTabs tabs={tabs} activeTab={activeTab} onActiveChange={setActiveTab}>
         {(active) => {
           const generalProps: InspectorProps<unknown> = {
             id: selectedId,
@@ -72,7 +104,12 @@ export function NodeInspector() {
           };
           switch (active) {
             case 'general':
-              return <General {...(generalProps as InspectorProps<never>)} />;
+              return (
+                <>
+                  <VariantPicker />
+                  <General {...(generalProps as InspectorProps<never>)} />
+                </>
+              );
             case 'execution':
               return (
                 <ExecutionTab

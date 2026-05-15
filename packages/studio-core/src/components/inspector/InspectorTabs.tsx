@@ -14,18 +14,29 @@ const LABELS: Record<InspectorTabId, string> = {
 interface Props {
   tabs: InspectorTabId[];
   initial?: InspectorTabId;
+  /**
+   * Optional controlled active tab. When provided (along with onActiveChange),
+   * the caller owns the active state — used by NodeInspector to react to
+   * focusedIssue changes from the validation panel.
+   */
+  activeTab?: InspectorTabId;
+  onActiveChange?: (tab: InspectorTabId) => void;
   /** Render-prop called with the active tab id; returns the panel content. */
   children: (active: InspectorTabId) => ReactNode;
 }
 
 /**
  * Capability-driven tab strip + panel for the Node Inspector. The active tab
- * is local state — when the active tab id is no longer present (e.g. variant
- * switch removes the AI tabs), it falls back to the first tab so the panel
- * never goes blank.
+ * is local state by default; pass `activeTab` + `onActiveChange` to use
+ * controlled mode (required for focus reactions from the validation panel).
+ * When the active tab id is no longer present (e.g. variant switch removes
+ * the AI tabs), it falls back to the first tab so the panel never goes blank.
  */
-export function InspectorTabs({ tabs, initial, children }: Props) {
-  const [active, setActive] = useState<InspectorTabId>(initial ?? tabs[0]);
+export function InspectorTabs({ tabs, initial, activeTab, onActiveChange, children }: Props) {
+  const [localActive, setLocalActive] = useState<InspectorTabId>(initial ?? tabs[0]);
+  const controlled = activeTab !== undefined && onActiveChange !== undefined;
+  const active = controlled ? activeTab : localActive;
+  const setActive = controlled ? onActiveChange : setLocalActive;
   const current = tabs.includes(active) ? active : tabs[0];
   return (
     <div style={containerStyle}>

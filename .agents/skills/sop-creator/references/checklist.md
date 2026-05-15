@@ -53,7 +53,7 @@ This checklist is complete when:
 
 **All items complete:** [ ] Yes [ ] No
 
-**Issues found:** ****\*\*****\_\_\_****\*\*****
+**Issues found:** \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 **Follow-up needed:** [ ] Yes [ ] No
 

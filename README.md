@@ -7,9 +7,13 @@ A React-Flow-based visual workflow builder for [Archon](https://github.com/colea
 
 ## Status
 
-**v1 in development.** See [`docs/superpowers/specs/2026-05-08-archon-workflow-studio-design.md`](docs/superpowers/specs/2026-05-08-archon-workflow-studio-design.md) for the design and [`docs/superpowers/plans/2026-05-08-archon-workflow-studio-v1.md`](docs/superpowers/plans/2026-05-08-archon-workflow-studio-v1.md) for the implementation plan.
+**v0.9.0** — Phases 0–10 complete. All core features shipped: canvas, node library, inspector, `when:` builder, validation, YAML preview, undo/redo, multi-select, copy/paste, alignment, themes, variant picker, and connected mode (connect → list → build → save against a live Archon).
 
-## Quickstart (standalone, after Phase 2)
+Live smoke test pending: connect the standalone app to a running Archon instance to verify the `/connect` → `/workflows` → `/builder/:name` flow end-to-end.
+
+See [`docs/superpowers/plans/`](docs/superpowers/plans/) for per-phase implementation history and drift notes.
+
+## Quickstart (standalone)
 
 ```bash
 # requires Bun >= 1.3.0

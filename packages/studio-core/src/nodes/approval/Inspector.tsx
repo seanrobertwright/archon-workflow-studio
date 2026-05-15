@@ -1,8 +1,8 @@
 import type { FC } from 'react';
-import { Field } from '../../components/inspector/shared';
+import { CmEditor, Field } from '../../components/inspector/shared';
+import { useWhenContext } from '../../components/when/useWhenContext';
 import type { InspectorProps } from '../shared/types';
 import { GeneralTab } from '../shared/GeneralTab';
-import { textareaStyle } from '../shared/inspectorStyles';
 import type { ApprovalNodeData } from './data';
 
 /**
@@ -19,23 +19,24 @@ export const ApprovalInspector: FC<InspectorProps<ApprovalNodeData>> = ({
 }) => {
   const patchApproval = (patch: Record<string, unknown>) => onChange({ approval: patch });
   const a = data.approval;
+  const { extensions } = useWhenContext(id);
 
   return (
     <GeneralTab base={base} siblingIds={siblingIds} onChange={onChange}>
-      <Field
-        label="Message"
-        htmlFor={`approval-msg-${id}`}
-        hint="Shown to the human reviewer when execution pauses."
-      >
-        <textarea
-          id={`approval-msg-${id}`}
-          aria-label="Message"
-          value={a.message ?? ''}
-          onChange={(e) => patchApproval({ message: e.target.value })}
-          rows={3}
-          style={textareaStyle}
-        />
-      </Field>
+      <div data-field="approval.message">
+        <Field
+          label="Message"
+          hint="Shown to the human reviewer when execution pauses. Type $ for upstream references."
+        >
+          <CmEditor
+            ariaLabel="Message"
+            value={a.message ?? ''}
+            onChange={(next) => patchApproval({ message: next })}
+            extensions={extensions}
+            minHeight={80}
+          />
+        </Field>
+      </div>
       <Field
         label="Capture response"
         htmlFor={`approval-cap-${id}`}
@@ -51,19 +52,14 @@ export const ApprovalInspector: FC<InspectorProps<ApprovalNodeData>> = ({
       </Field>
       <Field
         label="On reject — prompt"
-        htmlFor={`approval-rej-${id}`}
         hint="Optional follow-up prompt shown when the reviewer rejects."
       >
-        <textarea
-          id={`approval-rej-${id}`}
-          aria-label="On reject prompt"
+        <CmEditor
+          ariaLabel="On reject prompt"
           value={a.on_reject?.prompt ?? ''}
-          onChange={(e) => {
-            const v = e.target.value;
-            patchApproval({ on_reject: v === '' ? null : { prompt: v } });
-          }}
-          rows={2}
-          style={textareaStyle}
+          onChange={(next) => patchApproval({ on_reject: next === '' ? null : { prompt: next } })}
+          extensions={extensions}
+          minHeight={60}
         />
       </Field>
     </GeneralTab>

@@ -6,6 +6,7 @@ import type { WorkflowApiClient } from '../../src/api/WorkflowApiClient';
 
 beforeEach(() => {
   useBuilderStore.getState().clearWorkflow();
+  useBuilderStore.getState().setYamlPreviewOpen(false);
   globalThis.localStorage?.clear();
 });
 
@@ -106,10 +107,61 @@ describe('WorkflowBuilder', () => {
       />,
     );
     act(() => {
-      useBuilderStore.getState().setSelectedNodeId('only');
+      useBuilderStore.getState().setSelection(['only']);
     });
     // RenameField renders a labelled input "Node ID"; presence proves the
     // inspector swapped from the empty state to the populated state.
     expect(screen.getByLabelText(/node id/i)).toBeDefined();
+  });
+
+  it('renders a bottom drawer slot', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'demo', description: '', base: {}, unknown: {} },
+      nodes: [{ id: 'only', variant: 'command', data: { command: 'foo' }, base: {}, unknown: {} }],
+    });
+    const { container } = render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd="__dev__"
+        workflowName="demo"
+      />,
+    );
+    expect(container.querySelector('[data-testid="validation-drawer"]')).not.toBeNull();
+  });
+
+  it('right column shows NodeInspector by default and YamlPreviewDrawer when toggled', () => {
+    useBuilderStore.getState().loadWorkflow({
+      meta: { name: 'n', description: 'd', base: {}, unknown: {} },
+      nodes: [{ id: 'a', variant: 'prompt', data: { prompt: 'x' }, base: {}, unknown: {} }],
+    });
+    const { container, rerender } = render(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd=""
+        workflowName="n"
+      />,
+    );
+    expect(container.querySelector('[data-pane="inspector"]')).toBeTruthy();
+    expect(container.querySelector('[data-pane="yaml-preview"]')).toBeNull();
+
+    act(() => {
+      useBuilderStore.getState().setYamlPreviewOpen(true);
+    });
+    rerender(
+      <WorkflowBuilder
+        client={noopClient}
+        theme="archon-dark"
+        archonUrl="__dev__"
+        cwd=""
+        workflowName="n"
+      />,
+    );
+    expect(container.querySelector('[data-pane="inspector"]')).toBeNull();
+    expect(container.querySelector('[data-pane="yaml-preview"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="validation-drawer"]')).toBeTruthy();
   });
 });

@@ -30,24 +30,22 @@ describe('LoopInspector', () => {
     expect(screen.getByLabelText(/^interactive$/i)).toBeDefined();
   });
 
-  it('emits a deep-merge patch on loop.prompt edit (preserves siblings)', () => {
-    let captured: Record<string, unknown> | null = null;
-    render(
+  it('renders loop.prompt in a CmEditor populated from data.loop.prompt', () => {
+    // Phase 5 migrated loop.prompt to CmEditor; typing simulation is
+    // covered by CmEditor.spec.tsx. The deep-merge patch shape is still
+    // exercised on other (non-CmEditor) fields like fresh_context.
+    const { container } = render(
       <LoopInspector
         id="n1"
         data={{ loop: baseLoop }}
         base={{}}
         unknown={{}}
-        onChange={(p) => {
-          captured = p;
-        }}
+        onChange={() => {}}
         siblingIds={[]}
       />,
     );
-    fireEvent.change(screen.getByLabelText(/^prompt$/i), { target: { value: 'new body' } });
-    // Patch shape MUST be { loop: { prompt: ... } } so mergePatch deep-merges
-    // and doesn't replace until / max_iterations / fresh_context.
-    expect(captured).toEqual({ loop: { prompt: 'new body' } });
+    expect(screen.getByLabelText(/^prompt$/i).textContent).toContain('iterate');
+    expect(container.querySelector('[contenteditable="true"]')).not.toBeNull();
   });
 
   it('reveals the gate_message field only when interactive is on', () => {

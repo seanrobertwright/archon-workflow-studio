@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 import './Canvas.css';
 
 import { useBuilderStore } from '../store/builder-store';
+import { withUndo } from '../store/undo-store';
 import { deriveFlow, type DagNodeData } from './canvas/deriveFlow';
 import { layoutWithDagre } from '../hooks/useDagre';
 import { usePositionContext } from '../hooks/PositionContext';
@@ -27,6 +28,8 @@ import {
   makeOnEdgesDelete,
   makeOnNodesDelete,
 } from './canvas/canvasHandlers';
+import { computeGuides } from '../smart-guides';
+import { SmartGuidesLayer } from './SmartGuidesLayer';
 
 export function Canvas() {
   const positions = usePositionContext();
@@ -37,7 +40,16 @@ export function Canvas() {
   const disconnect = useBuilderStore((s) => s.disconnect);
   const deleteNodes = useBuilderStore((s) => s.deleteNodes);
   const addNodeFromVariant = useBuilderStore((s) => s.addNodeFromVariant);
-  const setSelectedNodeId = useBuilderStore((s) => s.setSelectedNodeId);
+  const setSelection = useBuilderStore((s) => s.setSelection);
+  const addToSelection = useBuilderStore((s) => s.addToSelection);
+  const clearSelection = useBuilderStore((s) => s.clearSelection);
+  const primarySelectionId = useBuilderStore((s) => s.primarySelectionId);
+  const selectedNodeIds = useBuilderStore((s) => s.selectedNodeIds);
+  const setHoveredNodeId = useBuilderStore((s) => s.setHoveredNodeId);
+  const setNodePosition = useBuilderStore((s) => s.setNodePosition);
+  const activeGuides = useBuilderStore((s) => s.activeGuides);
+  const setActiveGuides = useBuilderStore((s) => s.setActiveGuides);
+  const gridSnap = useBuilderStore((s) => s.gridSnap);
 
   // Build the React Flow nodeTypes map from the variant registry. Each per-variant
   // Renderer is registered under its own variant id; deriveFlow emits `type: variant`,
@@ -55,9 +67,10 @@ export function Canvas() {
   // Derive RF nodes/edges from the store. `deriveFlow` returns {x:0,y:0} for
   // any node missing from the persistence map; we overlay seeded/persisted
   // positions when rendering below.
+  const selectedNodeIdsSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
   const { rfNodes: derivedNodes, rfEdges } = useMemo(
-    () => deriveFlow(storeNodes, positions.positions),
-    [storeNodes, positions.positions],
+    () => deriveFlow(storeNodes, positions.positions, selectedNodeIdsSet),
+    [storeNodes, positions.positions, selectedNodeIdsSet],
   );
 
   // Local in-flight node array for React Flow. We hydrate it from `derivedNodes`
@@ -125,6 +138,21 @@ export function Canvas() {
     [persistOnNodesChange],
   );
 
+  // Pan the primary selection into view when selection changes programmatically
+  // (e.g., from ValidationPanel row click). The `selected` flag on rfNodes is
+  // already driven by deriveFlow + the rehydrate effect above; no need to
+  // re-apply it here.
+  useEffect(() => {
+    if (primarySelectionId) {
+      const node = reactFlow.getNode(primarySelectionId);
+      if (node) {
+        const cx = node.position.x + (node.measured?.width ?? 150) / 2;
+        const cy = node.position.y + (node.measured?.height ?? 40) / 2;
+        reactFlow.setCenter(cx, cy, { duration: 300, zoom: reactFlow.getZoom() });
+      }
+    }
+  }, [primarySelectionId, reactFlow]);
+
   const onConnect = useMemo(() => makeOnConnect(connect), [connect]);
   const onEdgesDelete = useMemo(() => makeOnEdgesDelete(disconnect), [disconnect]);
   const onNodesDelete = useMemo(() => makeOnNodesDelete(deleteNodes), [deleteNodes]);
@@ -161,8 +189,15 @@ export function Canvas() {
     [reactFlow, addNodeFromVariant, positions],
   );
 
+  const NODE_W = 200,
+    NODE_H = 60;
+
   return (
-    <div onDrop={onDrop} onDragOver={onDragOver} style={{ width: '100%', height: '100%' }}>
+    <div
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -171,14 +206,54 @@ export function Canvas() {
         onConnect={onConnect}
         onEdgesDelete={onEdgesDelete}
         onNodesDelete={onNodesDelete}
-        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-        onPaneClick={() => setSelectedNodeId(null)}
+        onNodeClick={(event, node) => {
+          if (event.shiftKey) {
+            addToSelection(node.id);
+          } else {
+            setSelection([node.id]);
+          }
+        }}
+        onPaneClick={() => clearSelection()}
+        onNodeMouseEnter={(_e, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
+        onNodeDrag={(_event, node) => {
+          const allNodes = useBuilderStore.getState().nodes;
+          const allPositions = useBuilderStore.getState().positions;
+          const draggingRect = {
+            id: node.id,
+            x: node.position.x,
+            y: node.position.y,
+            w: NODE_W,
+            h: NODE_H,
+          };
+          const stationary = allNodes
+            .filter((n) => n.id !== node.id)
+            .map((n) => {
+              const pos = allPositions[n.id] ?? { x: 0, y: 0 };
+              return { id: n.id, x: pos.x, y: pos.y, w: NODE_W, h: NODE_H };
+            });
+          const guides = computeGuides(draggingRect, stationary, 8);
+          setActiveGuides(guides);
+        }}
+        onNodeDragStop={(_event, node) => {
+          setActiveGuides([]);
+          withUndo('drag node', {
+            label: 'drag node',
+            workflow: useBuilderStore.getState().workflow ?? null,
+            nodes: [...useBuilderStore.getState().nodes],
+            positions: { ...useBuilderStore.getState().positions },
+          });
+          setNodePosition(node.id, node.position.x, node.position.y);
+        }}
+        snapToGrid={gridSnap}
+        snapGrid={[20, 20]}
         fitView
         proOptions={{ hideAttribution: true }}
       >
         <Background />
         <Controls position="top-left" />
       </ReactFlow>
+      <SmartGuidesLayer guides={activeGuides} width={800} height={600} />
     </div>
   );
 }
